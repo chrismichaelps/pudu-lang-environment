@@ -5,6 +5,12 @@ tags: [changelog]
 
 # Changelog
 
+## 2026-10-07 — Initial release 0.1.0 (#1)
+
+- Released 0.1.0 as tag `v0.1.0` with a GitHub release and the API documentation in the
+  repository wiki; the registry serves `@chrismichaelps/pudu-lang-environment@0.1.0`
+  ([[handoffs/2026-10-07-initial-package]]).
+
 ## 2026-10-07 — Initial package (#1)
 
 - The package `@chrismichaelps/pudu-lang-environment` 0.1.0 with the module root
