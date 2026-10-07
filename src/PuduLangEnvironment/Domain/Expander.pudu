@@ -1,0 +1,132 @@
+/** @Domain.Expander.Module — replaces references to other variables */
+module PuduLangEnvironment.Domain.Expander
+
+import Std.Char as Char
+import Std.Option as Option
+import Std.Text as Text
+
+/** @Domain.Expander.Fallback — what a braced reference answers instead */
+type Fallback
+  = NoFallback
+  | WhenUnsetOrEmpty(Str)
+  | WhenUnset(Str)
+
+/// The value with every `$NAME` and `${NAME}` replaced by the known value of `NAME`, else its
+/// process value, else nothing. A `$` after an odd run of backslashes is literal and every run
+/// before a `$` is halved; an answered value is final text and is not expanded again.
+export fn expand(value: Str, known: &Map[Str, Str], process: &Map[Str, Str]) -> Str {
+  let chars = value.chars()
+  let size = chars.length()
+  var pieces: Array[Str] = []
+  var index = 0
+  while index < size {
+    let symbol = chars[index]
+    if symbol == '\\' {
+      let start = index
+      while index < size && chars[index] == '\\' { index = index + 1 }
+      let run = index - start
+      if index < size && chars[index] == '$' {
+        pieces = pieces.push("\\".repeat(run / 2))
+        if run % 2 == 1 {
+          pieces = pieces.push("$")
+          index = index + 1
+        }
+      } else {
+        pieces = pieces.push("\\".repeat(run))
+      }
+    } else if symbol == '$' {
+      let replaced = reference(&chars, index, known, process)
+      pieces = pieces.push(replaced[0])
+      index = replaced[1]
+    } else {
+      pieces = pieces.push(symbol.toText())
+      index = index + 1
+    }
+  }
+  pieces.join("")
+}
+
+/// The text a `$` at `at` stands for, and where reading resumes after it.
+fn reference(chars: &Array[Char], at: Int, known: &Map[Str, Str], process: &Map[Str, Str]) -> (Str, Int) {
+  let size = chars.length()
+  let next = at + 1
+  if next < size && chars[next] == '{' {
+    match closingBrace(chars, next + 1) {
+      case Some(close) => (braced(Text.fromChars(&chars.slice(next + 1, close)), known, process), close + 1)
+      case None => ("$", next)
+    }
+  } else if next < size && startsName(chars[next]) {
+    var end = next + 1
+    while end < size && continuesName(chars[end]) { end = end + 1 }
+    (resolve(Text.fromChars(&chars.slice(next, end)), &NoFallback, known, process), end)
+  } else {
+    ("$", next)
+  }
+}
+
+/// Where the brace balancing an opened one closes, reading from `from`.
+fn closingBrace(chars: &Array[Char], from: Int) -> Option[Int] {
+  var depth = 1
+  var at = from
+  while at < chars.length() {
+    let symbol = chars[at]
+    if symbol == '{' {
+      depth = depth + 1
+    } else if symbol == '}' {
+      depth = depth - 1
+      if depth == 0 { return Some(at) }
+    }
+    at = at + 1
+  }
+  None
+}
+
+/// What the inside of `${…}` answers: its name, split from a default at the first top-level `:-`
+/// or `-`.
+fn braced(inner: Str, known: &Map[Str, Str], process: &Map[Str, Str]) -> Str {
+  let chars = inner.chars()
+  var depth = 0
+  var at = 0
+  while at < chars.length() {
+    let symbol = chars[at]
+    if symbol == '{' {
+      depth = depth + 1
+    } else if symbol == '}' {
+      depth = depth - 1
+    } else if depth == 0 && symbol == ':' && at + 1 < chars.length() && chars[at + 1] == '-' {
+      return resolve(inner.take(at).trim(), &WhenUnsetOrEmpty(inner.drop(at + 2)), known, process)
+    } else if depth == 0 && symbol == '-' {
+      return resolve(inner.take(at).trim(), &WhenUnset(inner.drop(at + 1)), known, process)
+    }
+    at = at + 1
+  }
+  resolve(inner.trim(), &NoFallback, known, process)
+}
+
+/// The value a name answers under its fallback.
+fn resolve(name: Str, fallback: &Fallback, known: &Map[Str, Str], process: &Map[Str, Str]) -> Str {
+  let found = lookup(name, known, process)
+  match fallback {
+    case WhenUnsetOrEmpty(text) => if Option.unwrapOr(found, "").isEmpty() { expand(text, known, process) } else { Option.unwrapOr(found, "") }
+    case WhenUnset(text) => match found {
+      case Some(held) => held
+      case None => expand(text, known, process)
+    }
+    case NoFallback => Option.unwrapOr(found, "")
+  }
+}
+
+/// The known value of a name, else its process value; an empty name has neither.
+fn lookup(name: Str, known: &Map[Str, Str], process: &Map[Str, Str]) -> Option[Str] {
+  if name.isEmpty() { return None }
+  match known.get(name) {
+    case Some(held) => Some(held)
+    case None => process.get(name)
+  }
+}
+
+/// Whether a character may start a name.
+fn startsName(symbol: Char) -> Bool { Char.isLower(symbol) || Char.isUpper(symbol) || symbol == '_' }
+
+/// Whether a character may continue a name.
+fn continuesName(symbol: Char) -> Bool { startsName(symbol) || Char.isDigit(symbol) }

@@ -1,0 +1,27 @@
+/** @Examples.ChildProcess.Program — loaded variables given to a child */
+module ChildProcess
+
+import Std.Io as Io
+import Std.Process as Process
+import PuduLangEnvironment.Loader as Loader
+import PuduLangEnvironment.Options as Options
+import PuduLangEnvironment.Source as Source
+import PuduLangEnvironment.Variables as Variables
+
+/// Loads one variable and hands it to an isolated `printenv`, which sees nothing else.
+fn main() -> Int {
+  let options = Options.defaults().withSources(&[Source.Text("inline", "GREETING=hello from the environment file")])
+  match Loader.load(&options) {
+    case Ok(variables) => {
+      let plan = Variables.apply(&variables, &Process.launch("printenv", &["GREETING"]).isolated())
+      match Process.runLaunch(&plan, "") {
+        case Ok(finished) => {
+          let _shown = Io.writeLine(finished.output.trim())
+          if finished.output.trim() == "hello from the environment file" { 0 } else { 1 }
+        }
+        case Err(_) => 1
+      }
+    }
+    case Err(_) => 1
+  }
+}

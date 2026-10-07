@@ -1,0 +1,66 @@
+/** @Test.Variables.Suite — the settled view and its typed reads */
+module PuduLangEnvironment.VariablesTest
+
+import Std.App.Secret as Secret
+import Std.Decimal as Decimal
+import Std.Io as Io
+import Std.Map as Map
+import Std.Process as Process
+import Std.Result as Result
+import Std.Test as Test
+import PuduLangEnvironment as Environment
+import PuduLangEnvironment.Variables as Variables
+
+/// The secret every rendering check looks for.
+const SECRET: Str = "hunter2-very-secret"
+
+/// Runs the suite.
+fn main() -> Int {
+  let loaded = Map.fromPairs(&[("PORT", "8080"), ("RATIO", "0.25"), ("PRICE", "9.99"), ("DEBUG", "TRUE"), ("TOKEN", SECRET), ("HOST", "file"), ("EMPTY", ""), ("WORD", "fast")])
+  let process = Map.fromPairs(&[("HOST", "shell"), ("SHELL_ONLY", "kept"), ("EMPTY", "")])
+  let skipped = [Environment.MissingFile(".env.local")]
+  let view = Variables.settled(&loaded, &process, false, [".env"], skipped)
+  let launch = Variables.apply(&view, &Process.launch("tool", &[]).isolated())
+  let checks = Test.suite("Variables", &[
+      Test.equals("a loaded value is found", &Variables.find(&view, "PORT"), &Some("8080")),
+      Test.equals("a process value the load left alone is found", &Variables.find(&view, "SHELL_ONLY"), &Some("kept")),
+      Test.equals("without overwriting the process value wins", &Variables.find(&view, "HOST"), &Some("shell")),
+      Test.equals("with overwriting the loaded value wins", &Variables.find(&Variables.settled(&loaded, &process, true, [], []), "HOST"), &Some("file")),
+      Test.equals("an empty value is absent", &(Variables.find(&view, "EMPTY"), Variables.has(&view, "EMPTY")), &(None, false)),
+      Test.equals("an unset key is absent", &(Variables.find(&view, "NOPE"), Variables.has(&view, "NOPE")), &(None, false)),
+      Test.that("a set key is present", Variables.has(&view, "PORT")),
+      Test.equals("text answers the value", &Variables.text(&view, "PORT"), &Ok("8080")),
+      Test.equals("text names a missing key", &Variables.text(&view, "NOPE"), &Err(Environment.Missing(["NOPE"]))),
+      Test.equals("a whole number is read", &(Variables.int(&view, "PORT"), Variables.findInt(&view, "PORT")), &(Ok(8080), Some(8080))),
+      Test.equals("a float is read", &(Variables.float(&view, "RATIO"), Variables.findFloat(&view, "RATIO")), &(Ok(0.25), Some(0.25))),
+      Test.equals("a decimal is read", &(Result.ok(Variables.decimal(&view, "PRICE")), Variables.findDecimal(&view, "PRICE")), &(Decimal.parse("9.99"), Decimal.parse("9.99"))),
+      Test.equals("a truth value is read", &(Variables.bool(&view, "DEBUG"), Variables.findBool(&view, "DEBUG")), &(Ok(true), Some(true))),
+      Test.equals("a malformed value names its key and kind", &[Result.map(Variables.int(&view, "WORD"), |_n: Int| ()), Result.map(Variables.float(&view, "WORD"), |_f: Float64| ()), Result.map(Variables.decimal(&view, "WORD"), |_d: Decimal| ()), Result.map(Variables.bool(&view, "WORD"), |_b: Bool| ())], &[
+          Err(Environment.Malformed("WORD", "a whole number")),
+          Err(Environment.Malformed("WORD", "a floating-point number")),
+          Err(Environment.Malformed("WORD", "a decimal number")),
+          Err(Environment.Malformed("WORD", "true or false"))
+        ]),
+      Test.equals("a missing value is missing for every kind", &(Variables.int(&view, "NOPE"), Variables.bool(&view, "NOPE")), &(Err(Environment.Missing(["NOPE"])), Err(Environment.Missing(["NOPE"])))),
+      Test.equals("find answers nothing for malformed and missing values", &(Variables.findInt(&view, "WORD"), Variables.findFloat(&view, "NOPE"), Variables.findDecimal(&view, "WORD"), Variables.findBool(&view, "PORT")), &(None, None, None, None)),
+      Test.equals("a secret reveals its value", &Result.map(Variables.secret(&view, "TOKEN"), |held: Secret.Secret| Secret.reveal(&held)), &Ok(SECRET)),
+      Test.equals("a secret redacts its value", &Result.map(Variables.secret(&view, "TOKEN"), |held: Secret.Secret| Secret.redact(&held)), &Ok("[REDACTED]")),
+      Test.equals("a missing secret is missing", &Result.map(Variables.secret(&view, "NOPE"), |held: Secret.Secret| Secret.redact(&held)), &Err(Environment.Missing(["NOPE"]))),
+      Test.equals("require accepts present keys", &Variables.require(&view, &["PORT", "SHELL_ONLY"]), &Ok(())),
+      Test.equals("require names every absent key in order", &Variables.require(&view, &["Z", "PORT", "EMPTY", "A"]), &Err(Environment.Missing(["Z", "EMPTY", "A"]))),
+      Test.equals("only applied keys are listed", &view.applied, &["DEBUG", "EMPTY", "PORT", "PRICE", "RATIO", "TOKEN", "WORD"]),
+      Test.equals("sources and skipped problems are kept", &(view.sources, view.skipped), &([".env"], skipped)),
+      Test.equals("a launch is given the applied keys", &launch.variables, &[("DEBUG", "TRUE"), ("EMPTY", ""), ("PORT", "8080"), ("PRICE", "9.99"), ("RATIO", "0.25"), ("TOKEN", SECRET), ("WORD", "fast")]),
+      Test.that("a launch keeps its own choices", !launch.inherits && launch.program == "tool"),
+      Test.equals("a description hides values", &Variables.describe(&view), &"7 variables applied from .env; values are hidden."),
+      Test.equals("a view from no source says so", &Variables.describe(&Variables.settled(&Map.empty(), &Map.empty(), true, [], [])), &"0 variables applied from no source; values are hidden."),
+      Test.that("rendering the view shows no value", !show(view).contains(SECRET) && !show(view).contains("8080")),
+      Test.that("the process view reads the process", Variables.has(&Variables.process(), "PATH")),
+      Test.equals("the process view applies nothing and reads no source", &(Variables.process().applied, Variables.process().sources), &([], []))
+    ])
+  let ran = Test.run(&checks)
+  for failure in Test.failuresOf(&ran) {
+    let _reported = Io.writeErrorLine(failure)
+  }
+  Test.report(&ran)
+}

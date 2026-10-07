@@ -1,0 +1,18 @@
+/** @Domain.Values.Module — text to numbers and truth values */
+module PuduLangEnvironment.Domain.Values
+
+import Std.Decimal as Decimal
+import Std.Text as Text
+import PuduLangEnvironment.Constants.Names as Names
+
+/// The whole number the text spells, with an optional sign, ignoring surrounding space.
+export fn toInt(text: Str) -> Option[Int] { Text.wholeOf(text) }
+
+/// The floating-point number the text spells, ignoring surrounding space.
+export fn toFloat(text: Str) -> Option[Float64] { text.trim().toFloat() }
+
+/// The exact decimal number the text spells, ignoring surrounding space.
+export fn toDecimal(text: Str) -> Option[Decimal] { Decimal.parse(text.trim()) }
+
+/// `true` or `false` in any letter case, ignoring surrounding space.
+export fn toBool(text: Str) -> Option[Bool] { Names.TRUTH_WORDS.get(text.trim().toLower()) }

@@ -1,0 +1,118 @@
+/** @Environment.Variables.Module — loaded values settled over the process */
+module PuduLangEnvironment.Variables
+
+import Std.App.Secret as Secret
+import Std.Env as Env
+import Std.Map as Map
+import Std.Process as Process
+import PuduLangEnvironment.Constants.Messages as Messages
+import PuduLangEnvironment.Constants.Names as Names
+import PuduLangEnvironment.Domain.Layers as Layers
+import PuduLangEnvironment.Domain.Values as Values
+import PuduLangEnvironment as Environment
+import PuduLangEnvironment.Utils.Template as Template
+
+/** @Environment.Variables.Variables — a settled view whose values stay hidden */
+export type Variables = {
+  lookup: fn(Str) -> Option[Str],
+  applied: Array[Str],
+  sources: Array[Str],
+  skipped: Array[Environment.Problem]
+}
+
+/// The loaded values settled over the process values: each replaces a process value when
+/// overwriting, or when the process value is unset or empty.
+export fn settled(loaded: &Map[Str, Str], current: &Map[Str, Str], overwrite: Bool, sources: Array[Str], skipped: Array[Environment.Problem]) -> Variables {
+  let view = Layers.settle(loaded, current, overwrite)
+  let values = view.values
+  Variables{lookup: fn(key: Str) -> Option[Str] { values.get(key) }, applied: view.applied, sources: sources, skipped: skipped}
+}
+
+/// The process environment alone, read once.
+export fn process() -> Variables {
+  settled(&Map.empty(), &Map.fromPairs(&Env.variables()), true, [], [])
+}
+
+/// The value of a key that is set and not empty.
+export fn find(variables: &Variables, key: Str) -> Option[Str] {
+  let held = (variables.lookup)(key) ?
+  if held.isEmpty() { None } else { Some(held) }
+}
+
+/// Whether a key is set and not empty.
+export fn has(variables: &Variables, key: Str) -> Bool { find(variables, key) != None }
+
+/// The value of a key, or `Missing` naming it.
+export fn text(variables: &Variables, key: Str) -> Result[Str, Environment.Problem] {
+  match find(variables, key) {
+    case Some(held) => Ok(held)
+    case None => Err(Environment.Missing([key]))
+  }
+}
+
+/// The whole number a key holds, or `Missing` or `Malformed` naming it.
+export fn int(variables: &Variables, key: Str) -> Result[Int, Environment.Problem] {
+  converted(variables, key, Values.toInt, Names.KIND_INT)
+}
+
+/// The whole number a key holds, when it is set and spells one.
+export fn findInt(variables: &Variables, key: Str) -> Option[Int] { Values.toInt(find(variables, key) ?) }
+
+/// The floating-point number a key holds, or `Missing` or `Malformed` naming it.
+export fn float(variables: &Variables, key: Str) -> Result[Float64, Environment.Problem] {
+  converted(variables, key, Values.toFloat, Names.KIND_FLOAT)
+}
+
+/// The floating-point number a key holds, when it is set and spells one.
+export fn findFloat(variables: &Variables, key: Str) -> Option[Float64] { Values.toFloat(find(variables, key) ?) }
+
+/// The exact decimal number a key holds, or `Missing` or `Malformed` naming it.
+export fn decimal(variables: &Variables, key: Str) -> Result[Decimal, Environment.Problem] {
+  converted(variables, key, Values.toDecimal, Names.KIND_DECIMAL)
+}
+
+/// The exact decimal number a key holds, when it is set and spells one.
+export fn findDecimal(variables: &Variables, key: Str) -> Option[Decimal] { Values.toDecimal(find(variables, key) ?) }
+
+/// The truth value a key holds, or `Missing` or `Malformed` naming it.
+export fn bool(variables: &Variables, key: Str) -> Result[Bool, Environment.Problem] {
+  converted(variables, key, Values.toBool, Names.KIND_BOOL)
+}
+
+/// The truth value a key holds, when it is set and spells one.
+export fn findBool(variables: &Variables, key: Str) -> Option[Bool] { Values.toBool(find(variables, key) ?) }
+
+/// The value of a key wrapped so that rendering it shows a placeholder, or `Missing` naming it.
+export fn secret(variables: &Variables, key: Str) -> Result[Secret.Secret, Environment.Problem] {
+  Ok(Secret.secret(text(variables, key) ?))
+}
+
+/// Nothing when every key is set and not empty, else `Missing` with every absent key in the order
+/// asked.
+export fn require(variables: &Variables, keys: &Array[Str]) -> Result[(), Environment.Problem] {
+  let absent = keys.filter(|key: Str| !has(variables, key))
+  if absent.isEmpty() { Ok(()) } else { Err(Environment.Missing(absent)) }
+}
+
+/// The launch giving the child process every applied key and its value.
+export fn apply(variables: &Variables, launch: &Process.Launch) -> Process.Launch {
+  var given = *launch
+  for key in variables.applied {
+    if let Some(held) = (variables.lookup)(key) { given = Process.Launch{..given, variables: given.variables.push((key, held))} }
+  }
+  given
+}
+
+/// How many keys were applied from which sources, without any value.
+export fn describe(variables: &Variables) -> Str {
+  let from = if variables.sources.isEmpty() { Messages.NO_SOURCES } else { variables.sources.join(Messages.LIST_SEPARATOR) }
+  Template.fill(Messages.DESCRIBED, &[show(variables.applied.length()), from])
+}
+
+/// The value of a key converted, or `Missing` or `Malformed` naming it and the kind expected.
+fn converted[T](variables: &Variables, key: Str, convert: fn(Str) -> Option[T], kind: Str) -> Result[T, Environment.Problem] {
+  match convert(text(variables, key) ?) {
+    case Some(value) => Ok(value)
+    case None => Err(Environment.Malformed(key, kind))
+  }
+}

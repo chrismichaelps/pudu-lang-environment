@@ -1,0 +1,34 @@
+/** @Test.Domain.Cascade.Suite — environment names and layered files */
+module PuduLangEnvironment.Domain.CascadeTest
+
+import Std.Io as Io
+import Std.Map as Map
+import Std.Test as Test
+import PuduLangEnvironment.Domain.Cascade as Cascade
+
+/// Runs the suite.
+fn main() -> Int {
+  let both = Map.fromPairs(&[("PUDU_ENV", " staging "), ("PROFILE", "production")])
+  let profileOnly = Map.fromPairs(&[("PUDU_ENV", "  "), ("PROFILE", "production")])
+  let checks = Test.suite("Domain.Cascade", &[
+      Test.equals("an explicit name wins, trimmed", &Cascade.chooseName(&Some(" test "), &both), &Some("test")),
+      Test.equals("a blank explicit name defers to the variables", &Cascade.chooseName(&Some("  "), &both), &Some("staging")),
+      Test.equals("PUDU_ENV comes before PROFILE", &Cascade.chooseName(&None, &both), &Some("staging")),
+      Test.equals("a blank PUDU_ENV defers to PROFILE", &Cascade.chooseName(&None, &profileOnly), &Some("production")),
+      Test.equals("no name anywhere is none", &Cascade.chooseName(&None, &Map.empty()), &None),
+      Test.that("a plain name is safe", Cascade.isSafe("staging") && Cascade.isSafe("eu-west.1") && Cascade.isSafe("a")),
+      Test.that("a blank name is unsafe", !Cascade.isSafe("") && !Cascade.isSafe("   ")),
+      Test.that("a parent step is unsafe", !Cascade.isSafe("..") && !Cascade.isSafe("a..b")),
+      Test.that("a single dot is safe", Cascade.isSafe("v1.2")),
+      Test.that("path separators are unsafe", !Cascade.isSafe("a/b") && !Cascade.isSafe("a\\b")),
+      Test.that("characters a file name cannot hold are unsafe", !Cascade.isSafe("a:b") && !Cascade.isSafe("a*") && !Cascade.isSafe("a?") && !Cascade.isSafe("a\"") && !Cascade.isSafe("<a") && !Cascade.isSafe("a>") && !Cascade.isSafe("a|b")),
+      Test.that("control characters are unsafe", !Cascade.isSafe("a\nb") && !Cascade.isSafe("a\tb")),
+      Test.equals("without a name the cascade is the shared files", &Cascade.candidates(&None), &[".env", ".env.local"]),
+      Test.equals("a name adds its own layers", &Cascade.candidates(&Some("test")), &[".env", ".env.local", ".env.test", ".env.test.local"])
+    ])
+  let ran = Test.run(&checks)
+  for failure in Test.failuresOf(&ran) {
+    let _reported = Io.writeErrorLine(failure)
+  }
+  Test.report(&ran)
+}

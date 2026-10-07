@@ -1,0 +1,10 @@
+# Written by pudu install. Do not edit by hand.
+version = 1
+
+[[package]]
+name = "@chrismichaelps/pudu-lang-validator"
+version = "0.1.1"
+source = "github+https://github.com/chrismichaelps/pudu-lang-validator#931cef8fa717633ba96afa85f1844ceecd803a0b"
+checksum = "sha256:be34307e1a930793de5128607c6721fccb41bd40ac37e3cb8b7b9539518086b3"
+root = "PuduLangValidator"
+dependencies = []

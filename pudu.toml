@@ -1,0 +1,12 @@
+[package]
+name = "@chrismichaelps/pudu-lang-environment"
+version = "0.1.0"
+description = "Environment files for Pudu: load .env variables safely with layered files, discovery, expansion, typed reads, and secrets kept out of every message"
+license = "Apache-2.0"
+keywords = ["environment", "env", "configuration", "secrets", "variables"]
+language = ">=0.1.3 <0.2.0"
+source = "src"
+root = "PuduLangEnvironment"
+
+[dependencies]
+"@chrismichaelps/pudu-lang-validator" = "^0.1.1"

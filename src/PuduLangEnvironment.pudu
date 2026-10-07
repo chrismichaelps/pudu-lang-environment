@@ -1,0 +1,49 @@
+/** @Environment.Root.Vocabulary — problems a load or read reports */
+module PuduLangEnvironment
+
+import PuduLangEnvironment.Constants.Messages as Messages
+import PuduLangEnvironment.Utils.Template as Template
+
+/** @Environment.Root.Problem — why a load or read has no answer */
+export type Problem
+  = BlankPath
+  | MissingFile(Str)
+  | Unreadable(Str, Str)
+  | Undecodable(Str, Str)
+  | UnclosedQuote(Str, Int, Str)
+  | NotFound(Array[Str])
+  | UnsafeEnvironmentName(Str)
+  | InvalidOptions(Array[Str])
+  | Missing(Array[Str])
+  | Malformed(Str, Str)
+  | Invalid(Array[Str])
+
+/// One sentence saying what went wrong, naming keys, lines, and paths but never a value.
+export fn describe(problem: &Problem) -> Str {
+  match problem {
+    case BlankPath => Messages.BLANK_PATH
+    case MissingFile(path) => Template.fill(Messages.MISSING_FILE, &[path])
+    case Unreadable(path, reason) => Template.fill(Messages.UNREADABLE, &[path, reason])
+    case Undecodable(source, encoding) => Template.fill(Messages.UNDECODABLE, &[source, encoding])
+    case UnclosedQuote(source, line, key) => Template.fill(Messages.UNCLOSED_QUOTE, &[source, show(line), key])
+    case NotFound(paths) => Template.fill(Messages.NOT_FOUND, &[paths.join(Messages.LIST_SEPARATOR)])
+    case UnsafeEnvironmentName(name) => Template.fill(Messages.UNSAFE_ENVIRONMENT_NAME, &[name])
+    case InvalidOptions(problems) => Template.fill(Messages.INVALID_OPTIONS, &[problems.join(Messages.PROBLEM_SEPARATOR)])
+    case Missing(keys) => Template.fill(Messages.MISSING, &[keys.join(Messages.LIST_SEPARATOR)])
+    case Malformed(key, kind) => Template.fill(Messages.MALFORMED, &[key, kind])
+    case Invalid(failures) => Template.fill(Messages.INVALID_SETTINGS, &[failures.join(Messages.LIST_SEPARATOR)])
+  }
+}
+
+/// Whether a lenient load may record the problem and go on: a source that is absent or cannot be
+/// read, as opposed to one that is wrong.
+export fn isSkippable(problem: &Problem) -> Bool {
+  match problem {
+    case BlankPath => true
+    case MissingFile(_) => true
+    case Unreadable(_, _) => true
+    case Undecodable(_, _) => true
+    case NotFound(_) => true
+    case _ => false
+  }
+}

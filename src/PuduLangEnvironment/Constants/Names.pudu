@@ -1,0 +1,47 @@
+/** @Constants.Names.Module — file names, variable names, and words */
+module PuduLangEnvironment.Constants.Names
+
+/// The environment file read when none is named, and the root of every cascade name.
+export const DEFAULT_FILE: Str = ".env"
+
+/// What ends the name of a layer kept to one machine.
+export const LOCAL_SUFFIX: Str = ".local"
+
+/// The variables that name the environment for the cascade, asked in this order.
+export const ENVIRONMENT_NAME_VARIABLES: Array[Str] = ["PUDU_ENV", "PROFILE"]
+
+/// How many parent directories probing climbs unless told otherwise.
+export const DEFAULT_PROBE_LEVELS: Int = 4
+
+/// The character a byte-order mark decodes to, dropped from the start of a text.
+export const BYTE_ORDER_MARK: Str = "\u{FEFF}"
+
+/// The word that may precede a key when export syntax is on.
+export const EXPORT_KEYWORD: Str = "export"
+
+/// The spellings of each truth value, compared in lower case.
+export const TRUTH_WORDS: Map[Str, Bool] = mapOf([("true", true), ("false", false)])
+
+/// The characters no environment name may hold, because some platform refuses them in a file name.
+export const UNSAFE_NAME_CHARACTERS: Set[Char] = setOf(['/', '\\', ':', '*', '?', '"', '<', '>', '|'])
+
+/// The sequence that would let an environment name climb out of its directory.
+export const PARENT_STEP: Str = ".."
+
+/// The kind a whole-number read expects, as `Malformed` names it.
+export const KIND_INT: Str = "a whole number"
+
+/// The kind a float read expects, as `Malformed` names it.
+export const KIND_FLOAT: Str = "a floating-point number"
+
+/// The kind a decimal read expects, as `Malformed` names it.
+export const KIND_DECIMAL: Str = "a decimal number"
+
+/// The kind a truth-value read expects, as `Malformed` names it.
+export const KIND_BOOL: Str = "true or false"
+
+/// What a redacted rendering shows in place of a secret field.
+export const REDACTED: Str = "[REDACTED]"
+
+/// The characters of a configuration key that its variable spells as `_`.
+export const SETTING_SEPARATORS: Set[Char] = setOf(['.', '-'])

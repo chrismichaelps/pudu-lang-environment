@@ -1,0 +1,28 @@
+/** @Domain.Keys.Module — field names to environment variable names */
+module PuduLangEnvironment.Domain.Keys
+
+import Std.Char as Char
+import PuduLangEnvironment.Constants.Names as Names
+
+/// The variable a field reads when no `@env` names one: the field's name in upper snake case,
+/// with `_` before each upper-case letter that follows a lower-case letter or a digit.
+export fn fromField(name: Str) -> Str {
+  var pieces: Array[Str] = []
+  var previous = ' '
+  for symbol in name {
+    if Char.isUpper(symbol) && (Char.isLower(previous) || Char.isDigit(previous)) { pieces = pieces.push("_") }
+    pieces = pieces.push(Char.toUpper(symbol).toText())
+    previous = symbol
+  }
+  pieces.join("")
+}
+
+/// The variable a configuration setting reads: its key in upper case with each `.` and `-` as `_`,
+/// the spelling the standard configuration reads from the environment.
+export fn fromSetting(key: Str) -> Str {
+  var pieces: Array[Str] = []
+  for symbol in key {
+    pieces = pieces.push(if Names.SETTING_SEPARATORS.contains(symbol) { "_" } else { Char.toUpper(symbol).toText() })
+  }
+  pieces.join("")
+}

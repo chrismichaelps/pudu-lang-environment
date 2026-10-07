@@ -1,0 +1,39 @@
+/** @Examples.QuickStart.Program — load .env and read typed values */
+module QuickStart
+
+import Std.Fs as Fs
+import Std.Io as Io
+import Std.Path as Path
+import PuduLangEnvironment as Environment
+import PuduLangEnvironment.Loader as Loader
+import PuduLangEnvironment.Options as Options
+import PuduLangEnvironment.Variables as Variables
+
+/// Writes a project's `.env`, loads it, and reads its values by type.
+fn run(project: Str) -> Result[Int, Fs.FsError] {
+  let _written = Io.write(Path.join(project, ".env"), "# service\nPORT=8080\nDEBUG=true\nDATABASE_URL=\"postgres://app:s3cret@db/app\"\n")
+  match Options.defaults().inDirectory(project).withStrict().load() {
+    case Ok(variables) => {
+      let port = Variables.int(&variables, "PORT")
+      let debug = Variables.bool(&variables, "DEBUG")
+      let _described = Io.writeLine(Variables.describe(&variables))
+      let _missing = match Variables.require(&variables, &["DATABASE_URL", "API_KEY"]) {
+        case Ok(_) => Io.writeLine("every key is set")
+        case Err(problem) => Io.writeLine(Environment.describe(&problem))
+      }
+      Ok(if port == Ok(8080) && debug == Ok(true) { 0 } else { 1 })
+    }
+    case Err(problem) => {
+      let _said = Io.writeErrorLine(Environment.describe(&problem))
+      Ok(1)
+    }
+  }
+}
+
+/// Runs the example in a temporary project and answers 0 when every value reads as written.
+fn main() -> Int {
+  match Fs.withTemporaryDirectory("quick-start-", run) {
+    case Ok(status) => status
+    case Err(_) => 1
+  }
+}
