@@ -1,0 +1,66 @@
+/** @Test.Domain.Expander.Suite — references to other variables */
+module PuduLangEnvironment.Domain.ExpanderTest
+
+import Std.Io as Io
+import Std.Map as Map
+import Std.Test as Test
+import PuduLangEnvironment.Domain.Expander as Expander
+
+/// The value expanded over fixed known and process values.
+fn expanded(value: Str) -> Str {
+  let known = Map.fromPairs(&[("NAME", "pudu"), ("EMPTY", ""), ("PATHY", "a$NAME")])
+  let process = Map.fromPairs(&[("HOME", "/home/me"), ("NAME", "shell"), ("BLANK", "")])
+  Expander.expand(value, &known, &process)
+}
+
+/// Runs the suite.
+fn main() -> Int {
+  let checks = Test.suite("Domain.Expander", &[
+      Test.equals("text without references is unchanged", &expanded("plain text"), &"plain text"),
+      Test.equals("a bare reference is replaced", &expanded("$NAME"), &"pudu"),
+      Test.equals("a braced reference is replaced", &expanded("$\{NAME\}!"), &"pudu!"),
+      Test.equals("a bare name ends at the first character that cannot continue it", &expanded("$NAME-x $NAME.y"), &"pudu-x pudu.y"),
+      Test.equals("a bare name takes digits and underscores", &expanded("$HOME_2"), &""),
+      Test.equals("a bare name may start with an underscore", &expanded("$_X|"), &"|"),
+      Test.equals("known values come before the process", &expanded("$NAME"), &"pudu"),
+      Test.equals("the process answers unknown names", &expanded("$HOME/bin"), &"/home/me/bin"),
+      Test.equals("an unknown name answers nothing", &expanded("[$MISSING]"), &"[]"),
+      Test.equals("an answered value is not expanded again", &expanded("$PATHY"), &"a$NAME"),
+      Test.equals("a $ before a digit is literal", &expanded("$1"), &"$1"),
+      Test.equals("a $ before punctuation is literal", &expanded("cost $-5"), &"cost $-5"),
+      Test.equals("a trailing $ is literal", &expanded("a$"), &"a$"),
+      Test.equals("an unclosed brace leaves $ literal", &expanded("$\{NAME"), &"$\{NAME"),
+      Test.equals("an unclosed brace keeps reading after it", &expanded("$\{x $NAME"), &"$\{x pudu"),
+      Test.equals("a name inside braces is trimmed", &expanded("$\{ NAME \}"), &"pudu"),
+      Test.equals(":- answers the default when unset", &expanded("$\{MISSING:-fallback\}"), &"fallback"),
+      Test.equals(":- answers the default when empty", &expanded("$\{EMPTY:-fallback\}"), &"fallback"),
+      Test.equals(":- answers the default when the process value is empty", &expanded("$\{BLANK:-fallback\}"), &"fallback"),
+      Test.equals(":- answers the value when set", &expanded("$\{NAME:-fallback\}"), &"pudu"),
+      Test.equals("- answers the default when unset", &expanded("$\{MISSING-fallback\}"), &"fallback"),
+      Test.equals("- answers the empty value when set but empty", &expanded("[$\{EMPTY-fallback\}]"), &"[]"),
+      Test.equals("- answers the value when set", &expanded("$\{NAME-fallback\}"), &"pudu"),
+      Test.equals("a default is expanded", &expanded("$\{MISSING:-$HOME/x\}"), &"/home/me/x"),
+      Test.equals("a default may hold a braced reference", &expanded("$\{MISSING:-$\{NAME\}\}"), &"pudu"),
+      Test.equals("a default may be empty", &expanded("[$\{MISSING:-\}]"), &"[]"),
+      Test.equals("a default keeps its spaces", &expanded("$\{MISSING:- a b \}"), &" a b "),
+      Test.equals("an operator inside nested braces is not the operator", &expanded("$\{MISSING:-$\{A-b\}\}"), &"b"),
+      Test.equals("a default holding a colon is kept whole", &expanded("$\{MISSING:-http://x\}"), &"http://x"),
+      Test.equals("an empty name answers the default", &expanded("$\{:-d\}$\{-e\}"), &"de"),
+      Test.equals("an empty name without a default answers nothing", &expanded("[$\{\}]"), &"[]"),
+      Test.equals("an operator after nested braces is the operator", &expanded("[$\{X\{-\}:-d\}]"), &"[d]"),
+      Test.equals("a trailing colon is part of the name", &expanded("[$\{NAME:\}]"), &"[]"),
+      Test.equals("a colon alone is part of the name", &expanded("[$\{NAME:x\}]"), &"[]"),
+      Test.equals("one backslash makes $ literal", &expanded("\\$NAME"), &"$NAME"),
+      Test.equals("two backslashes are halved and the reference expands", &expanded("\\\\$NAME"), &"\\pudu"),
+      Test.equals("three backslashes keep one and make $ literal", &expanded("\\\\\\$NAME"), &"\\$NAME"),
+      Test.equals("four backslashes are halved", &expanded("\\\\\\\\$NAME"), &"\\\\pudu"),
+      Test.equals("backslashes not before $ are kept", &expanded("a\\\\b\\c"), &"a\\\\b\\c"),
+      Test.equals("trailing backslashes are kept", &expanded("x\\\\"), &"x\\\\"),
+      Test.equals("non-ASCII text is kept", &expanded("ñandú $NAME é"), &"ñandú pudu é")
+    ])
+  let ran = Test.run(&checks)
+  for failure in Test.failuresOf(&ran) {
+    let _reported = Io.writeErrorLine(failure)
+  }
+  Test.report(&ran)
+}

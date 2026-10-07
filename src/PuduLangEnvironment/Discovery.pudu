@@ -1,0 +1,102 @@
+/** @Environment.Discovery.Module — which environment files a load reads */
+module PuduLangEnvironment.Discovery
+
+import Std.Fs as Fs
+import Std.Io as Io
+import Std.List as List
+import Std.Option as Option
+import Std.Path as Path
+import Std.Result as Result
+import PuduLangEnvironment.Constants.Names as Names
+import PuduLangEnvironment.Domain.Cascade as Cascade
+import PuduLangEnvironment as Environment
+import PuduLangEnvironment.Options as Options
+
+/** @Environment.Discovery.Found — the files to read and what was skipped */
+export type Found = { paths: Array[Str], skipped: Array[Environment.Problem] }
+
+/// The files the options name, probe for, or cascade to, in reading order. An unsafe environment
+/// name is refused; finding nothing is refused when strict and recorded otherwise.
+export fn discover(options: &Options.Options, process: &Map[Str, Str]) -> Result[Found, Environment.Problem] {
+  if options.cascade { return cascaded(options, process) }
+  match options.probe {
+    case Some(levels) => {
+      let start = realDirectory(options.directory)
+      match probe(start, levels, &[Names.DEFAULT_FILE]) {
+        case Some(directory) => Ok(Found{paths: [Path.join(directory, Names.DEFAULT_FILE)], skipped: []})
+        case None => nothing(options, ancestry(start, levels).map(|directory: Str| Path.join(directory, Names.DEFAULT_FILE)))
+      }
+    }
+    case None => Ok(Found{paths: options.files.map(|path: Str| locate(options.directory, path)), skipped: []})
+  }
+}
+
+/// The first directory, from `start` up through `levels` parents, holding any of the names.
+export fn probe(start: Str, levels: Int, names: &Array[Str]) -> Option[Str] {
+  for directory in ancestry(start, levels) {
+    for named in names {
+      if Io.exists(Path.join(directory, named)) { return Some(directory) }
+    }
+  }
+  None
+}
+
+/// A path located against a directory: an absolute path as it is, a relative one joined to it.
+export fn locate(directory: Str, path: Str) -> Str {
+  if Path.isAbsolute(path) || directory.isEmpty() || directory == "." { path } else { Path.join(directory, path) }
+}
+
+/// The cascade's existing files, from the probed directory or the first file's directory.
+fn cascaded(options: &Options.Options, process: &Map[Str, Str]) -> Result[Found, Environment.Problem] {
+  let name = Cascade.chooseName(&options.environmentName, process)
+  if let Some(named) = name {
+    if !Cascade.isSafe(named) { return Err(Environment.UnsafeEnvironmentName(named)) }
+  }
+  let names = Cascade.candidates(&name)
+  let directory = match options.probe {
+    case Some(levels) => {
+      let start = realDirectory(options.directory)
+      match probe(start, levels, &names) {
+        case Some(found) => found
+        case None => {
+          var looked: Array[Str] = []
+          for each in ancestry(start, levels) { looked = looked.concat(names.map(|named: Str| Path.join(each, named))) }
+          return nothing(options, looked)
+        }
+      }
+    }
+    case None => Path.directoryOf(locate(options.directory, Option.unwrapOr(List.first(&options.files), Names.DEFAULT_FILE)))
+  }
+  let candidates = names.map(|named: Str| locate(directory, named))
+  let existing = candidates.filter(|path: Str| Io.exists(path))
+  if existing.isEmpty() { nothing(options, candidates) } else { Ok(Found{paths: existing, skipped: []}) }
+}
+
+/// No file found: refused when strict, recorded otherwise.
+fn nothing(options: &Options.Options, looked: Array[Str]) -> Result[Found, Environment.Problem] {
+  let problem = Environment.NotFound(looked)
+  if options.strict { Err(problem) } else { Ok(Found{paths: [], skipped: [problem]}) }
+}
+
+/// The directory and up to `levels` of its parents, nearest first.
+fn ancestry(start: Str, levels: Int) -> Array[Str] {
+  var found = [start]
+  var current = start
+  var climbed = 0
+  while climbed < levels {
+    match Path.parentOf(current) {
+      case Some(parent) => {
+        found = found.push(parent)
+        current = parent
+        climbed = climbed + 1
+      }
+      case None => { climbed = levels }
+    }
+  }
+  found
+}
+
+/// The directory's real path, or the path as given when it cannot be resolved.
+fn realDirectory(directory: Str) -> Str {
+  Result.unwrapOr(Fs.canonical(if directory.isEmpty() { "." } else { directory }), directory)
+}

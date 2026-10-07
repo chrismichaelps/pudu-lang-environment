@@ -1,0 +1,48 @@
+/** @Test.Source.Suite — files, text, and bytes as sources */
+module PuduLangEnvironment.SourceTest
+
+import Std.Bytes as Bytes
+import Std.Env as Env
+import Std.Fs as Fs
+import Std.Io as Io
+import Std.Path as Path
+import Std.Result as Result
+import Std.Test as Test
+import PuduLangEnvironment.Domain.Encoding as Encoding
+import PuduLangEnvironment as Environment
+import PuduLangEnvironment.Source as Source
+
+/// Bytes from hexadecimal text.
+fn hex(text: Str) -> Bytes { Result.unwrapOr(Bytes.decodeHex(text), Bytes.empty()) }
+
+/// Runs the suite.
+fn main() -> Int {
+  let root = Result.unwrapOr(Fs.temporaryDirectoryIn(Env.temporaryDirectory(), "pudu-env-source-"), ".")
+  let written = Path.join(root, "app.env")
+  let latin = Path.join(root, "latin.env")
+  let _plain = Io.write(written, "A=1\r\nB=2\n")
+  let _latin = Fs.writeAtomically(latin, &hex("4b3de9"))
+  let missing = Path.join(root, "absent.env")
+  let checks = Test.suite("Source", &[
+      Test.equals("a file's label is its path", &Source.label(&Source.File("x.env")), &"x.env"),
+      Test.equals("text and bytes are labelled as given", &[Source.label(&Source.Text("inline", "")), Source.label(&Source.Data("blob", Bytes.empty()))], &["inline", "blob"]),
+      Test.equals("a file's lines are read", &Source.lines(&Source.File(written), Encoding.Utf8), &Ok(["A=1", "B=2", ""])),
+      Test.equals("a file is decoded in the declared encoding", &Source.lines(&Source.File(latin), Encoding.Latin1), &Ok(["K=é"])),
+      Test.equals("a file that does not decode is refused", &Source.lines(&Source.File(latin), Encoding.Utf8), &Err(Environment.Undecodable(latin, "UTF-8"))),
+      Test.equals("a missing file is refused", &Source.lines(&Source.File(missing), Encoding.Utf8), &Err(Environment.MissingFile(missing))),
+      Test.equals("a blank path is refused", &Source.lines(&Source.File("  "), Encoding.Utf8), &Err(Environment.BlankPath)),
+      Test.that("a directory cannot be read", match Source.lines(&Source.File(root), Encoding.Utf8) {
+          case Err(Environment.Unreadable(path, _)) => path == root
+          case _ => false
+        }),
+      Test.equals("text is split into lines", &Source.lines(&Source.Text("inline", "A=1\r\nB=2"), Encoding.Latin1), &Ok(["A=1", "B=2"])),
+      Test.equals("bytes are decoded", &Source.lines(&Source.Data("blob", hex("4b3de9")), Encoding.Latin1), &Ok(["K=é"])),
+      Test.equals("bytes that do not decode name their label", &Source.lines(&Source.Data("blob", hex("4b00ff")), Encoding.Utf16Le), &Err(Environment.Undecodable("blob", "UTF-16LE")))
+    ])
+  let _cleared = Fs.removeTree(root)
+  let ran = Test.run(&checks)
+  for failure in Test.failuresOf(&ran) {
+    let _reported = Io.writeErrorLine(failure)
+  }
+  Test.report(&ran)
+}

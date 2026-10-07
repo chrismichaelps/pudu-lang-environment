@@ -1,0 +1,101 @@
+/** @Test.Domain.Parser.Suite — lines of environment files to entries */
+module PuduLangEnvironment.Domain.ParserTest
+
+import Std.Io as Io
+import Std.Map as Map
+import Std.Result as Result
+import Std.Test as Test
+import PuduLangEnvironment.Domain.Layers as Layers
+import PuduLangEnvironment.Domain.Parser as Parser
+
+/// The default reading rules.
+fn plain() -> Parser.Rules {
+  Parser.Rules{trimValues: false, exportSyntax: false, inlineComments: true, expansion: false, overwrite: true}
+}
+
+/// The pairs the text assigns under the rules, over the given process values.
+fn read(text: Str, rules: Parser.Rules, process: Array[(Str, Str)]) -> Result[Array[(Str, Str)], Parser.Unclosed] {
+  let parsed = Parser.parse(&Parser.lines(text), &rules, Map.empty(), &Map.fromPairs(&process)) ?
+  Ok(parsed.entries.map(|entry: Layers.Entry| (entry.key, entry.value)))
+}
+
+/// The pairs the text assigns under the default rules.
+fn simple(text: Str) -> Result[Array[(Str, Str)], Parser.Unclosed] { read(text, plain(), []) }
+
+/// Runs the suite.
+fn main() -> Int {
+  let expanding = Parser.Rules{..plain(), expansion: true}
+  let keeping = Parser.Rules{..plain(), overwrite: false}
+  let known = Parser.parse(&["A=1", "A=2", "B=3"], &keeping, Map.empty(), &Map.empty())
+  let threaded = Parser.parse(&["B=$A"], &expanding, Map.fromPairs(&[("A", "earlier")]), &Map.empty())
+  let checks = Test.suite("Domain.Parser", &[
+      Test.equals("a plain assignment is read", &simple("KEY=value"), &Ok([("KEY", "value")])),
+      Test.equals("the key is trimmed and the value kept as written", &simple("  KEY  = value "), &Ok([("KEY", " value ")])),
+      Test.equals("blank lines and comments are skipped", &simple("\n   \n# A=1\n   # B=2\nC=3"), &Ok([("C", "3")])),
+      Test.equals("a line without = is skipped", &simple("NOTHING\nK=v"), &Ok([("K", "v")])),
+      Test.equals("a line starting with = is skipped", &simple("=v\nK=v"), &Ok([("K", "v")])),
+      Test.equals("a key of one character is read", &simple("K=v"), &Ok([("K", "v")])),
+      Test.equals("an empty key is skipped", &simple("   =v"), &Ok([])),
+      Test.equals("the value runs to the end after the first =", &simple("URL=a=b=c"), &Ok([("URL", "a=b=c")])),
+      Test.equals("an empty value is kept", &simple("EMPTY="), &Ok([("EMPTY", "")])),
+      Test.equals("an inline comment after a space is dropped", &simple("K=value # note"), &Ok([("K", "value")])),
+      Test.equals("an inline comment after a tab is dropped", &simple("K=value\t# note"), &Ok([("K", "value")])),
+      Test.equals("a # without space before it is kept", &simple("K=a#b"), &Ok([("K", "a#b")])),
+      Test.equals("a # after the value with a space after it is kept", &simple("K=a# b"), &Ok([("K", "a# b")])),
+      Test.equals("a # after a space with text right after it is a comment", &simple("K=a #b"), &Ok([("K", "a")])),
+      Test.equals("an empty double-quoted value is read", &simple("K=\"\"\nNEXT=1"), &Ok([("K", ""), ("NEXT", "1")])),
+      Test.equals("an empty single-quoted value is read", &simple("K=''"), &Ok([("K", "")])),
+      Test.equals("a quote after three backslashes is escaped", &simple("K=\"a\\\\\\\"b\""), &Ok([("K", "a\\\"b")])),
+      Test.equals("a leading # is kept", &simple("K=#b"), &Ok([("K", "#b")])),
+      Test.equals("a # right after the value's first character is a comment", &simple("K= # c"), &Ok([("K", "")])),
+      Test.equals("inline comments may be turned off", &read("K=value # note", Parser.Rules{..plain(), inlineComments: false}, []), &Ok([("K", "value # note")])),
+      Test.equals("a double-quoted value loses its quotes", &simple("K=\"quoted value\""), &Ok([("K", "quoted value")])),
+      Test.equals("a single-quoted value loses its quotes", &simple("K='quoted'"), &Ok([("K", "quoted")])),
+      Test.equals("space before the opening quote is ignored", &simple("K=   'q'"), &Ok([("K", "q")])),
+      Test.equals("text after the closing quote is ignored", &simple("K=\"q\" # comment"), &Ok([("K", "q")])),
+      Test.equals("a # inside quotes is kept", &simple("K=\"a # b\""), &Ok([("K", "a # b")])),
+      Test.equals("an escaped quote is kept", &simple("K=\"say \\\"hi\\\"\""), &Ok([("K", "say \"hi\"")])),
+      Test.equals("an escaped single quote is kept", &simple("K='it\\'s'"), &Ok([("K", "it's")])),
+      Test.equals("a doubled backslash is one", &simple("K=\"a\\\\b\""), &Ok([("K", "a\\b")])),
+      Test.equals("a quote after an escaped backslash closes", &simple("K=\"a\\\\\" tail"), &Ok([("K", "a\\")])),
+      Test.equals("other backslashes are kept", &simple("K=\"C:\\new\\temp\""), &Ok([("K", "C:\\new\\temp")])),
+      Test.equals("the other quote is literal", &simple("K=\"it's\""), &Ok([("K", "it's")])),
+      Test.equals("a quoted value spans lines", &simple("K=\"first\nsecond\nthird\"\nNEXT=1"), &Ok([("K", "first\nsecond\nthird"), ("NEXT", "1")])),
+      Test.equals("a single-quoted value spans lines", &simple("K='a\nb'"), &Ok([("K", "a\nb")])),
+      Test.equals("a quote closing on the last line is read", &simple("K=\"a\nb\""), &Ok([("K", "a\nb")])),
+      Test.equals("an unclosed quote names its line and key", &simple("A=1\nKEY=\"never\nclosed"), &Err(Parser.Unclosed{line: 2, key: "KEY"})),
+      Test.equals("an unclosed quote on the last line is refused", &simple("KEY='open"), &Err(Parser.Unclosed{line: 1, key: "KEY"})),
+      Test.equals("an unquoted value is not trimmed by default", &simple("K=  v  "), &Ok([("K", "  v  ")])),
+      Test.equals("trimming applies to unquoted values", &read("K=  v  ", Parser.Rules{..plain(), trimValues: true}, []), &Ok([("K", "v")])),
+      Test.equals("trimming applies to quoted values", &read("K=\"  v  \"", Parser.Rules{..plain(), trimValues: true}, []), &Ok([("K", "v")])),
+      Test.equals("export is part of the key by default", &simple("export K=v"), &Ok([("export K", "v")])),
+      Test.equals("export syntax drops the word", &read("export K=v", Parser.Rules{..plain(), exportSyntax: true}, []), &Ok([("K", "v")])),
+      Test.equals("export syntax drops a word followed by a tab", &read("export\tK=v", Parser.Rules{..plain(), exportSyntax: true}, []), &Ok([("K", "v")])),
+      Test.equals("export syntax keeps keys that begin with the word", &read("exporter=v\nexport=w", Parser.Rules{..plain(), exportSyntax: true}, []), &Ok([("exporter", "v"), ("export", "w")])),
+      Test.equals("references stay as written without expansion", &read("A=1\nB=$A", plain(), []), &Ok([("A", "1"), ("B", "$A")])),
+      Test.equals("an unquoted value expands", &read("A=1\nB=$A-x", expanding, []), &Ok([("A", "1"), ("B", "1-x")])),
+      Test.equals("a double-quoted value expands", &read("A=1\nB=\"$\{A\}x\"", expanding, []), &Ok([("A", "1"), ("B", "1x")])),
+      Test.equals("a single-quoted value never expands", &read("A=1\nB='$A'", expanding, []), &Ok([("A", "1"), ("B", "$A")])),
+      Test.equals("a literal value stays literal when referenced", &read("A='$HOME'\nB=$A", expanding, [("HOME", "/root")]), &Ok([("A", "$HOME"), ("B", "$HOME")])),
+      Test.equals("an escaped dollar in double quotes is literal", &read("B=\"\\$A\"", expanding, [("A", "x")]), &Ok([("B", "$A")])),
+      Test.equals("the process answers names the file did not set", &read("B=$HOME", expanding, [("HOME", "/root")]), &Ok([("B", "/root")])),
+      Test.equals("an earlier assignment hides the process value", &read("HOME=/mine\nB=$HOME", expanding, [("HOME", "/root")]), &Ok([("HOME", "/mine"), ("B", "/mine")])),
+      Test.equals("an inline comment is dropped before expansion", &read("A=1\nB=$A # $A", expanding, []), &Ok([("A", "1"), ("B", "1")])),
+      Test.equals("without overwriting the first value is what later expansions see", &read("A=1\nA=2\nB=$A", Parser.Rules{..expanding, overwrite: false}, []), &Ok([("A", "1"), ("A", "2"), ("B", "1")])),
+      Test.equals("with overwriting the latest value is what later expansions see", &read("A=1\nA=2\nB=$A", expanding, []), &Ok([("A", "1"), ("A", "2"), ("B", "2")])),
+      Test.equals("known values grow by the overwrite rule", &Result.map(known, |parsed: Parser.Parsed| parsed.known), &Ok(Map.fromPairs(&[("A", "1"), ("B", "3")]))),
+      Test.equals("known values from an earlier source are seen", &Result.map(threaded, |parsed: Parser.Parsed| parsed.entries), &Ok([Layers.Entry{key: "B", value: "earlier"}])),
+      Test.equals("CRLF lines are read", &simple("A=1\r\nB=2\r\n"), &Ok([("A", "1"), ("B", "2")])),
+      Test.equals("lines split on LF and CRLF", &Parser.lines("a\r\nb\nc\r"), &["a", "b", "c"]),
+      Test.equals("a carriage return inside a line is kept", &Parser.lines("a\rb"), &["a\rb"]),
+      Test.equals("a trailing line break leaves an empty last line", &Parser.lines("a\n"), &["a", ""]),
+      Test.equals("a leading byte-order mark is dropped", &Parser.lines("\u{FEFF}A=1\nB=2"), &["A=1", "B=2"]),
+      Test.equals("a byte-order mark later in the text is kept", &Parser.lines("A=\u{FEFF}"), &["A=\u{FEFF}"]),
+      Test.equals("empty text is one empty line", &Parser.lines(""), &[""])
+    ])
+  let ran = Test.run(&checks)
+  for failure in Test.failuresOf(&ran) {
+    let _reported = Io.writeErrorLine(failure)
+  }
+  Test.report(&ran)
+}

@@ -1,0 +1,25 @@
+/** @Examples.Configured.Program — loaded variables over application configuration */
+module Configured
+
+import Std.App.Config as Config
+import Std.Io as Io
+import PuduLangEnvironment.Configuration as Configuration
+import PuduLangEnvironment.Loader as Loader
+import PuduLangEnvironment.Options as Options
+import PuduLangEnvironment.Source as Source
+
+/// Declares settings, layers loaded variables over them, and reports where each value came from.
+fn main() -> Int {
+  let declared = Config.declaring(&[("server.port", "8080"), ("server.host", "localhost"), ("log-level", "info")])
+  let options = Options.defaults().withSources(&[Source.Text("inline", "SERVER_PORT=9443\nLOG_LEVEL=debug\nUNRELATED=ignored\n")])
+  match Loader.load(&options) {
+    case Ok(variables) => {
+      let config = declared.withVariables(&variables)
+      for pair in Config.entries(&config) {
+        let _shown = Io.writeLine(pair[0] + " = " + pair[1].value + " (" + Config.sourceName(&pair[1].source) + ")")
+      }
+      if Config.whole(&config, "server.port") == Ok(9443) && Config.textOr(&config, "server.host", "") == "localhost" { 0 } else { 1 }
+    }
+    case Err(_) => 1
+  }
+}

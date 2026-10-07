@@ -1,0 +1,105 @@
+/** @Domain.Parser.Module — lines of an environment file to entries */
+module PuduLangEnvironment.Domain.Parser
+
+import Std.Char as Char
+import Std.Text as Text
+import PuduLangEnvironment.Constants.Names as Names
+import PuduLangEnvironment.Domain.Expander as Expander
+import PuduLangEnvironment.Domain.Layers as Layers
+
+/** @Domain.Parser.Rules — the reading rules the options set */
+export type Rules = { trimValues: Bool, exportSyntax: Bool, inlineComments: Bool, expansion: Bool, overwrite: Bool }
+
+/** @Domain.Parser.Unclosed — a quote opened and never closed */
+export type Unclosed = { line: Int, key: Str }
+
+/** @Domain.Parser.Parsed — entries and what later expansions know */
+export type Parsed = { entries: Array[Layers.Entry], known: Map[Str, Str] }
+
+/// The entries the lines assign, in order, with `known` grown by each one the overwrite rule
+/// keeps. Expansion reads `known` before `process`. A quote never closed answers its opening line,
+/// counted from 1, and its key.
+export fn parse(rows: &Array[Str], rules: &Rules, known: Map[Str, Str], process: &Map[Str, Str]) -> Result[Parsed, Unclosed] {
+  var entries: Array[Layers.Entry] = []
+  var seen = known
+  var index = 0
+  let size = rows.length()
+  while index < size {
+    let line = rows[index]
+    let number = index + 1
+    index = index + 1
+    let visible = Text.trimStart(line)
+    let equals = line.indexOf("=")
+    if visible.isEmpty() || visible.startsWith("#") || equals < 1 { continue }
+    let key = keyOf(line.take(equals), rules.exportSyntax)
+    if key.isEmpty() { continue }
+    let raw = line.drop(equals + 1)
+    let opened = Text.trimStart(raw)
+    var value = ""
+    if opened.startsWith("'") || opened.startsWith("\"") {
+      let quote = opened.take(1)
+      var body = ""
+      var current = opened.drop(1)
+      var close = closingQuote(current, quote)
+      while close < 0 {
+        if index >= size { return Err(Unclosed{line: number, key: key}) }
+        body = body + current + "\n"
+        current = rows[index]
+        index = index + 1
+        close = closingQuote(current, quote)
+      }
+      let unquoted = (body + current.take(close)).replace("\\" + quote, quote)
+      let expanded = if rules.expansion && quote == "\"" { Expander.expand(unquoted, &seen, process) } else { unquoted }
+      value = expanded.replace("\\\\", "\\")
+    } else {
+      let bare = if rules.inlineComments { withoutComment(raw) } else { raw }
+      value = if rules.expansion { Expander.expand(bare, &seen, process) } else { bare }
+    }
+    if rules.trimValues { value = value.trim() }
+    seen = Layers.keep(&seen, key, value, rules.overwrite)
+    entries = entries.push(Layers.Entry{key: key, value: value})
+  }
+  Ok(Parsed{entries: entries, known: seen})
+}
+
+/// The lines of a text split on `\n`, each without the `\r` that ends a CRLF line, and without a
+/// byte-order mark at the start of the text.
+export fn lines(text: Str) -> Array[Str] {
+  Text.stripPrefix(text, Names.BYTE_ORDER_MARK).split("\n").map(|line: Str| if line.endsWith("\r") { line.take(line.length() - 1) } else { line })
+}
+
+/// The key written before `=`, trimmed, without a leading `export` word when export syntax is on.
+fn keyOf(text: Str, exportSyntax: Bool) -> Str {
+  let key = text.trim()
+  if exportSyntax && key.startsWith(Names.EXPORT_KEYWORD) {
+    let rest = key.drop(Names.EXPORT_KEYWORD.length())
+    if Text.trimStart(rest) != rest { return rest.trim() }
+  }
+  key
+}
+
+/// Where the first `quote` not escaped by an odd run of backslashes sits, or -1.
+fn closingQuote(text: Str, quote: Str) -> Int {
+  let chars = text.chars()
+  var escaped = false
+  var at = 0
+  while at < chars.length() {
+    let symbol = chars[at].toText()
+    if symbol == quote && !escaped { return at }
+    escaped = symbol == "\\" && !escaped
+    at = at + 1
+  }
+  -1
+}
+
+/// The value without the comment that starts at the first `#` following whitespace, and without
+/// the whitespace before it.
+fn withoutComment(value: Str) -> Str {
+  let chars = value.chars()
+  var at = 1
+  while at < chars.length() {
+    if chars[at] == '#' && Char.isWhitespace(chars[at - 1]) { return Text.trimEnd(value.take(at)) }
+    at = at + 1
+  }
+  value
+}

@@ -1,0 +1,104 @@
+/** @Environment.Loader.Module — reads, parses, and merges environment sources */
+module PuduLangEnvironment.Loader
+
+import Std.Env as Env
+import Std.Map as Map
+import PuduLangEnvironment.Discovery as Discovery
+import PuduLangEnvironment.Domain.Layers as Layers
+import PuduLangEnvironment.Domain.Parser as Parser
+import PuduLangEnvironment as Environment
+import PuduLangEnvironment.Options as Options
+import PuduLangEnvironment.Source as Source
+import PuduLangEnvironment.Variables as Variables
+
+/** @Environment.Loader.Collected — merged values, what was read, what was skipped */
+type Collected = { values: Map[Str, Str], sources: Array[Str], skipped: Array[Environment.Problem] }
+
+/// The merged values of the sources the options name, over the process environment as it is.
+export fn read(options: &Options.Options) -> Result[Map[Str, Str], Environment.Problem] {
+  readOver(options, &Map.fromPairs(&Env.variables()))
+}
+
+/// The merged values settled over the process environment as it is.
+export fn load(options: &Options.Options) -> Result[Variables.Variables, Environment.Problem] {
+  loadOver(options, &Map.fromPairs(&Env.variables()))
+}
+
+/// The merged values of the sources the options name, expanding over `process` instead of the
+/// process environment.
+export fn readOver(options: &Options.Options, process: &Map[Str, Str]) -> Result[Map[Str, Str], Environment.Problem] {
+  Ok(collect(options, process) ?.values)
+}
+
+/// The merged values settled over `process` instead of the process environment.
+export fn loadOver(options: &Options.Options, process: &Map[Str, Str]) -> Result[Variables.Variables, Environment.Problem] {
+  let collected = collect(options, process) ?
+  Ok(Variables.settled(&collected.values, process, options.overwrite, collected.sources, collected.skipped))
+}
+
+/** @Environment.Loader.Loading — a fluent chain ending in a read or load */
+export trait Loading {
+  fn read(self: &Self) -> Result[Map[Str, Str], Environment.Problem]
+  fn load(self: &Self) -> Result[Variables.Variables, Environment.Problem]
+}
+
+impl Loading for Options.Options {
+  /// The merged values these options name.
+  fn read(self: &Self) -> Result[Map[Str, Str], Environment.Problem] { read(self) }
+
+  /// The merged values these options name, settled over the process environment.
+  fn load(self: &Self) -> Result[Variables.Variables, Environment.Problem] { load(self) }
+}
+
+/// Every source read and parsed in order, threading known assignments, and merged. Without
+/// overwriting, the process values a load keeps are known from the start, so expansions see what
+/// the program will see.
+fn collect(options: &Options.Options, process: &Map[Str, Str]) -> Result[Collected, Environment.Problem] {
+  let problems = Options.validate(options)
+  if !problems.isEmpty() { return Err(Environment.InvalidOptions(problems)) }
+  var skipped: Array[Environment.Problem] = []
+  var sources: Array[Source.Source] = []
+  if options.sources.isEmpty() {
+    let found = Discovery.discover(options, process) ?
+    skipped = found.skipped
+    sources = found.paths.map(|path: Str| Source.File(path))
+  } else {
+    sources = options.sources.map(|given: Source.Source| located(options.directory, given))
+  }
+  let rules = Parser.Rules {
+    trimValues: options.trimValues,
+    exportSyntax: options.exportSyntax,
+    inlineComments: options.inlineComments,
+    expansion: options.expansion,
+    overwrite: options.overwrite
+  }
+  var known: Map[Str, Str] = if options.overwrite { Map.empty() } else { Map.filterValues(process, |held: Str| !held.isEmpty()) }
+  var layers: Array[Array[Layers.Entry]] = []
+  var opened: Array[Str] = []
+  for source in sources {
+    let named = Source.label(&source)
+    match Source.lines(&source, options.encoding) {
+      case Ok(lines) => match Parser.parse(&lines, &rules, known, process) {
+        case Ok(parsed) => {
+          known = parsed.known
+          layers = layers.push(parsed.entries)
+          opened = opened.push(named)
+        }
+        case Err(open) => { return Err(Environment.UnclosedQuote(named, open.line, open.key)) }
+      }
+      case Err(problem) => {
+        if options.strict || !Environment.isSkippable(&problem) { return Err(problem) }
+        skipped = skipped.push(problem)
+      }
+    }
+  }
+  Ok(Collected{values: Layers.merge(&layers, options.overwrite), sources: opened, skipped: skipped})
+}
+
+/// A file source located against the options' directory; other sources as they are.
+fn located(directory: Str, given: Source.Source) -> Source.Source {
+  match given {
+    case Source.File(path) => Source.File(Discovery.locate(directory, path))
+    case _ => given
+  }
+}

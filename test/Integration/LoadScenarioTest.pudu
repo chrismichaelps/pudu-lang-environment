@@ -1,0 +1,87 @@
+/** @Test.Integration.LoadScenario.Suite — a project loaded end to end */
+module Integration.LoadScenarioTest
+
+import Std.App.Secret as Secret
+import Std.Env as Env
+import Std.Fs as Fs
+import Std.Io as Io
+import Std.Map as Map
+import Std.Path as Path
+import Std.Process as Process
+import Std.Result as Result
+import Std.Test as Test
+import PuduLangEnvironment.Binding as Binding
+import PuduLangEnvironment as Environment
+import PuduLangEnvironment.Loader as Loader
+import PuduLangEnvironment.Options as Options
+import PuduLangEnvironment.Settings as Settings
+import PuduLangEnvironment.Variables as Variables
+import PuduLangValidator.Rule as Rule
+import PuduLangValidator.Rules.Number as NumberRule
+import PuduLangValidator.Validator as Validator
+
+/// The secret every rendering check looks for.
+const SECRET: Str = "whsec_9f8e7d6c5b4a"
+
+/** @Test.Integration.App — the settings the scenario's program reads */
+type App = {
+  port: Int,
+  publicUrl: Str,
+  @secret webhookSecret: Secret.Secret,
+  @default("2") workers: Int,
+  debug: Option[Bool]
+} derives Binding.Bind, Binding.Redacted
+
+/// Ports above 1023.
+fn rules() -> Validator.Validator[App] {
+  Validator.add(Validator.create(), Rule.build(NumberRule.greaterThan(Rule.ruleFor("port", |given: App| given.port), 1023)))
+}
+
+/// Runs the suite.
+fn main() -> Int {
+  let made = Result.unwrapOr(Fs.temporaryDirectoryIn(Env.temporaryDirectory(), "pudu-env-scenario-"), ".")
+  let root = Result.unwrapOr(Fs.canonical(made), made)
+  let service = Path.join(root, "services/api")
+  let _services = Io.makeDirectory(Path.join(root, "services"))
+  let _api = Io.makeDirectory(service)
+  let _shared = Io.write(Path.join(root, ".env"), "export PORT=8080\nHOST=localhost\nPUBLIC_URL=\"https://$\{HOST\}:$\{PORT\}\"\nWEBHOOK_SECRET='" + SECRET + "'\n")
+  let _staging = Io.write(Path.join(root, ".env.staging"), "HOST=staging.example.org\nPUBLIC_URL=\"https://$\{HOST\}\"\n")
+  let _mine = Io.write(Path.join(root, ".env.staging.local"), "DEBUG=true # only on this machine\n")
+  let process = Map.fromPairs(&[("PUDU_ENV", "staging"), ("PORT", "9443")])
+  let options = Options.defaults().inDirectory(service).withCascade().withProbe().withExportSyntax().withExpansion().withoutOverwrite()
+  let loaded = Loader.loadOver(&options, &process)
+  let app = match loaded {
+    case Ok(variables) => Settings.bind(&variables, &rules())
+    case Err(problem) => Err(problem)
+  }
+  let rendered = match app {
+    case Ok(held) => held.redacted()
+    case Err(_) => ""
+  }
+  let launch = match loaded {
+    case Ok(variables) => Variables.apply(&variables, &Process.launch("tool", &[]).isolated())
+    case Err(_) => Process.launch("none", &[])
+  }
+  let checks = Test.suite("Integration.LoadScenario", &[
+      Test.equals("the cascade is found two levels up and read in order", &Result.map(loaded, |view: Variables.Variables| view.sources.map(|path: Str| Path.nameOf(path))), &Ok([".env", ".env.staging", ".env.staging.local"])),
+      Test.equals("the process keeps its own port", &Result.map(app, |held: App| held.port), &Ok(9443)),
+      Test.equals("without overwriting the first public URL is kept, expanded with the port the process keeps", &Result.map(app, |held: App| held.publicUrl), &Ok("https://localhost:9443")),
+      Test.equals("the secret is read", &Result.map(app, |held: App| Secret.reveal(&held.webhookSecret)), &Ok(SECRET)),
+      Test.equals("a default fills an unset field", &Result.map(app, |held: App| held.workers), &Ok(2)),
+      Test.equals("an optional field is read from the machine's own layer", &Result.map(app, |held: App| held.debug), &Ok(Some(true))),
+      Test.that("the redacted rendering hides the secret", !rendered.contains(SECRET) && rendered.contains("webhookSecret: [REDACTED]")),
+      Test.that("the loaded view hides the secret", match loaded {
+          case Ok(view) => !show(view).contains(SECRET) && !Variables.describe(&view).contains(SECRET)
+          case Err(_) => false
+        }),
+      Test.that("a child receives the applied keys but not the process port", launch.variables.contains(("WEBHOOK_SECRET", SECRET)) && !launch.variables.contains(("PORT", "8080"))),
+      Test.equals("a port the validator refuses stops the program", &Result.map(Loader.loadOver(&options, &Map.fromPairs(&[("PUDU_ENV", "staging"), ("PORT", "80")])), |view: Variables.Variables| Result.map(Settings.bind(&view, &rules()), |held: App| held.port)), &Ok(Err(Environment.Invalid(["port (GreaterThan)"])))),
+      Test.equals("an unsafe environment name stops the load", &Result.map(Loader.loadOver(&options, &Map.fromPairs(&[("PUDU_ENV", "../../etc")])), |view: Variables.Variables| view.applied), &Err(Environment.UnsafeEnvironmentName("../../etc")))
+    ])
+  let _cleared = Fs.removeTree(root)
+  let ran = Test.run(&checks)
+  for failure in Test.failuresOf(&ran) {
+    let _reported = Io.writeErrorLine(failure)
+  }
+  Test.report(&ran)
+}

@@ -1,0 +1,24 @@
+/** @Examples.InMemory.Program — sources, expansion, and defaults without files */
+module InMemory
+
+import Std.Bytes as Bytes
+import Std.Io as Io
+import Std.Map as Map
+import PuduLangEnvironment.Domain.Encoding as Encoding
+import PuduLangEnvironment.Loader as Loader
+import PuduLangEnvironment.Options as Options
+import PuduLangEnvironment.Source as Source
+
+/// Reads text and Latin-1 bytes as two layers, expanding references with fallbacks.
+fn main() -> Int {
+  let shared = Source.Text("shared", "export REGION=eu-west\nBUCKET=assets-$REGION # where uploads go\n")
+  let local = Source.Data("local", Bytes.fromText("CITY='Mal' \nBANNER=\"$\{GREETING:-Hello\} from $BUCKET\"\n"))
+  let options = Options.defaults().withSources(&[shared, local]).withExportSyntax().withExpansion().withTrimValues().withEncoding(Encoding.Latin1)
+  match Loader.readOver(&options, &Map.empty()) {
+    case Ok(values) => {
+      for pair in values.entries() { let _shown = Io.writeLine(pair[0] + "=" + pair[1]) }
+      if values.get("BANNER") == Some("Hello from assets-eu-west") && values.get("CITY") == Some("Mal") { 0 } else { 1 }
+    }
+    case Err(_) => 1
+  }
+}

@@ -1,0 +1,147 @@
+/** @Environment.Binding.Module — records read from variables by derivation */
+module PuduLangEnvironment.Binding
+
+import Std.App.Secret as Secret
+import Std.Meta as Meta
+import PuduLangEnvironment.Constants.Names as Names
+import PuduLangEnvironment.Domain.Keys as Keys
+import PuduLangEnvironment.Domain.Values as Values
+import PuduLangEnvironment as Environment
+import PuduLangEnvironment.Variables as Variables
+
+/** @Environment.Binding.Variable — a type one variable's text spells */
+export trait Variable {
+  /// The value the text of `key` spells; `None` text means the variable is unset or empty.
+  fn fromVariable(key: Str, text: Option[Str]) -> Result[Self, Environment.Problem]
+  /// Whether an unset variable is a value rather than a missing one.
+  fn optional() -> Bool
+  /// The value rendered for a reader; a secret renders as a placeholder.
+  fn rendered(self: &Self) -> Str
+}
+
+impl Variable for Str {
+  /// The text itself.
+  fn fromVariable(key: Str, text: Option[Str]) -> Result[Self, Environment.Problem] { converted(key, text, |held: Str| Some(held), "") }
+  /// A text variable is required.
+  fn optional() -> Bool { false }
+  /// The text in quotes.
+  fn rendered(self: &Self) -> Str { show(*self) }
+}
+
+impl Variable for Int {
+  /// The whole number the text spells.
+  fn fromVariable(key: Str, text: Option[Str]) -> Result[Self, Environment.Problem] { converted(key, text, Values.toInt, Names.KIND_INT) }
+  /// A whole-number variable is required.
+  fn optional() -> Bool { false }
+  /// The number as written.
+  fn rendered(self: &Self) -> Str { show(*self) }
+}
+
+impl Variable for Float64 {
+  /// The floating-point number the text spells.
+  fn fromVariable(key: Str, text: Option[Str]) -> Result[Self, Environment.Problem] { converted(key, text, Values.toFloat, Names.KIND_FLOAT) }
+  /// A float variable is required.
+  fn optional() -> Bool { false }
+  /// The number as written.
+  fn rendered(self: &Self) -> Str { show(*self) }
+}
+
+impl Variable for Decimal {
+  /// The exact decimal number the text spells.
+  fn fromVariable(key: Str, text: Option[Str]) -> Result[Self, Environment.Problem] { converted(key, text, Values.toDecimal, Names.KIND_DECIMAL) }
+  /// A decimal variable is required.
+  fn optional() -> Bool { false }
+  /// The number as written.
+  fn rendered(self: &Self) -> Str { show(*self) }
+}
+
+impl Variable for Bool {
+  /// The truth value the text spells.
+  fn fromVariable(key: Str, text: Option[Str]) -> Result[Self, Environment.Problem] { converted(key, text, Values.toBool, Names.KIND_BOOL) }
+  /// A truth-value variable is required.
+  fn optional() -> Bool { false }
+  /// `true` or `false`.
+  fn rendered(self: &Self) -> Str { show(*self) }
+}
+
+impl Variable for Secret.Secret {
+  /// The text wrapped so that it renders as a placeholder.
+  fn fromVariable(key: Str, text: Option[Str]) -> Result[Self, Environment.Problem] { converted(key, text, |held: Str| Some(Secret.secret(held)), "") }
+  /// A secret variable is required.
+  fn optional() -> Bool { false }
+  /// The placeholder, never the value.
+  fn rendered(self: &Self) -> Str { Names.REDACTED }
+}
+
+impl [A: Variable] Variable for Option[A] {
+  /// Nothing when unset, else what the text spells as `A`.
+  fn fromVariable(key: Str, text: Option[Str]) -> Result[Self, Environment.Problem] {
+    match text {
+      case Some(_) => Ok(Some(A.fromVariable(key, text) ?))
+      case None => Ok(None)
+    }
+  }
+  /// An optional variable may be unset.
+  fn optional() -> Bool { true }
+  /// `None`, or the held value rendered as `A` renders it.
+  fn rendered(self: &Self) -> Str {
+    match self {
+      case Some(held) => "Some(" + held.rendered() + ")"
+      case None => "None"
+    }
+  }
+}
+
+/** @Environment.Binding.Bind — a record read from environment variables */
+export trait Bind {
+  /// The record whose every field is read from its variable, or why it cannot be.
+  fn bind(variables: &Variables.Variables) -> Result[Self, Environment.Problem]
+}
+
+/// A record reads each field from the variable `@env("NAME")` names, else from its name in upper
+/// snake case; an unset variable takes `@default("text")` when the field has one. Every required
+/// variable that is unset is reported at once as `Missing`; then the first value that does not
+/// convert is reported as `Malformed`.
+export derive Bind for T: Record {
+  fn bind(variables: &Variables.Variables) -> Result[T, Environment.Problem] {
+    let missing = Meta.collect[T](fn(field: Meta.Field[T, F]) -> Option[Str] where F: Variable {
+        let key = field.attributeOr("env", Keys.fromField(field.name))
+        if F.optional() || field.has("default") || Variables.has(variables, key) { None } else { Some(key) }
+      })
+    if !missing.isEmpty() { return Err(Environment.Missing(missing)) }
+    Meta.build[T](fn(field: Meta.Field[T, F]) -> Result[F, Environment.Problem] where F: Variable {
+        let key = field.attributeOr("env", Keys.fromField(field.name))
+        let found = Variables.find(variables, key)
+        let text = if found == None && field.has("default") { Some(field.attributeOr("default", "")) } else { found }
+        F.fromVariable(key, text)
+      })
+  }
+}
+
+/** @Environment.Binding.Redacted — a record rendered with its secrets hidden */
+export trait Redacted {
+  /// The record rendered as its name and fields, each `@secret` field as a placeholder.
+  fn redacted(self: &Self) -> Str
+}
+
+/// A record renders like `show` does, except that every secret, and every field marked
+/// `@secret`, renders as `[REDACTED]`.
+export derive Redacted for T: Record {
+  fn redacted(self: &T) -> Str {
+    let parts = Meta.collect[T](fn(field: Meta.Field[T, F]) -> Option[Str] where F: Variable {
+        Some(field.name + ": " + if field.has("secret") { Names.REDACTED } else { field.get(self).rendered() })
+      })
+    Meta.nameOf[T]() + "\{" + parts.join(", ") + "\}"
+  }
+}
+
+/// The value the text of `key` converts to, `Missing` when unset, or `Malformed` naming the kind.
+fn converted[T](key: Str, text: Option[Str], convert: fn(Str) -> Option[T], kind: Str) -> Result[T, Environment.Problem] {
+  match text {
+    case Some(held) => match convert(held) {
+      case Some(value) => Ok(value)
+      case None => Err(Environment.Malformed(key, kind))
+    }
+    case None => Err(Environment.Missing([key]))
+  }
+}

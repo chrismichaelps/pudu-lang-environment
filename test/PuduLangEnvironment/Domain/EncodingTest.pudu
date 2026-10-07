@@ -1,0 +1,62 @@
+/** @Test.Domain.Encoding.Suite — bytes to text in each encoding */
+module PuduLangEnvironment.Domain.EncodingTest
+
+import Std.Bytes as Bytes
+import Std.Io as Io
+import Std.Result as Result
+import Std.Test as Test
+import PuduLangEnvironment.Domain.Encoding as Encoding
+
+/// The text hexadecimal bytes spell in the declared encoding.
+fn decoded(hex: Str, declared: Encoding.Encoding) -> Option[Str] {
+  Encoding.decode(&Result.unwrapOr(Bytes.decodeHex(hex), Bytes.empty()), declared)
+}
+
+/// Runs the suite.
+fn main() -> Int {
+  let checks = Test.suite("Domain.Encoding", &[
+      Test.equals("UTF-8 is read", &decoded("4b3dc3a9", Encoding.Utf8), &Some("K=é")),
+      Test.equals("invalid UTF-8 is refused", &decoded("4bff", Encoding.Utf8), &None),
+      Test.equals("a UTF-8 mark is dropped", &decoded("efbbbf4b", Encoding.Utf8), &Some("K")),
+      Test.equals("a UTF-8 mark overrides the declared encoding", &decoded("efbbbfc3a9", Encoding.Latin1), &Some("é")),
+      Test.equals("Latin-1 maps each byte to its character", &decoded("4b3de9ff", Encoding.Latin1), &Some("K=éÿ")),
+      Test.equals("Latin-1 reads byte zero", &decoded("00", Encoding.Latin1), &Some("\u{0}")),
+      Test.equals("UTF-16LE is read", &decoded("4b003d00e900", Encoding.Utf16Le), &Some("K=é")),
+      Test.equals("UTF-16BE is read", &decoded("004b003d00e9", Encoding.Utf16Be), &Some("K=é")),
+      Test.equals("a high unit is placed by its order", &decoded("0001", Encoding.Utf16Le), &Some("Ā")),
+      Test.equals("a UTF-16LE mark is honoured and dropped", &decoded("fffe4b00", Encoding.Utf8), &Some("K")),
+      Test.equals("a UTF-16BE mark is honoured and dropped", &decoded("feff004b", Encoding.Utf8), &Some("K")),
+      Test.equals("a surrogate pair is joined", &decoded("3dd800de", Encoding.Utf16Le), &Some("😀")),
+      Test.equals("a surrogate pair is joined big-endian", &decoded("d83dde00", Encoding.Utf16Be), &Some("😀")),
+      Test.equals("the highest pair is joined", &decoded("dbffdfff", Encoding.Utf16Be), &Some("\u{10FFFF}")),
+      Test.equals("the lowest pair is joined", &decoded("d800dc00", Encoding.Utf16Be), &Some("\u{10000}")),
+      Test.equals("units beside the surrogates are characters", &decoded("d7ffe000", Encoding.Utf16Be), &Some("\u{D7FF}\u{E000}")),
+      Test.equals("an odd length is refused", &decoded("4b00ff", Encoding.Utf16Le), &None),
+      Test.equals("a high surrogate at the end is refused", &decoded("4b0000d8", Encoding.Utf16Le), &None),
+      Test.equals("a high surrogate before a non-low unit is refused", &decoded("d8000041", Encoding.Utf16Be), &None),
+      Test.equals("a high surrogate before a high surrogate is refused", &decoded("dbffdbff", Encoding.Utf16Be), &None),
+      Test.equals("a high surrogate before a unit above the lows is refused", &decoded("d800e000", Encoding.Utf16Be), &None),
+      Test.equals("a lone low surrogate is refused", &decoded("dc00", Encoding.Utf16Be), &None),
+      Test.equals("the last low surrogate alone is refused", &decoded("dfff", Encoding.Utf16Be), &None),
+      Test.equals("ASCII is read", &decoded("4b3d7e7f", Encoding.Ascii), &Some("K=~\u{7F}")),
+      Test.equals("a byte above ASCII is refused", &decoded("4b3d80", Encoding.Ascii), &None),
+      Test.equals("UTF-32LE is read", &decoded("4b0000003d000000e9000000", Encoding.Utf32Le), &Some("K=é")),
+      Test.equals("UTF-32BE is read", &decoded("0000004b0000003d000000e9", Encoding.Utf32Be), &Some("K=é")),
+      Test.equals("every octet of a UTF-32 unit counts", &[decoded("00f60100", Encoding.Utf32Le), decoded("0001f600", Encoding.Utf32Be)], &[Some("😀"), Some("😀")]),
+      Test.equals("a UTF-32 length off a multiple of four is refused", &[decoded("4b000000ff", Encoding.Utf32Le), decoded("000000", Encoding.Utf32Be)], &[None, None]),
+      Test.equals("a UTF-32 unit that is no character is refused", &[decoded("00d80000", Encoding.Utf32Le), decoded("00110000", Encoding.Utf32Be)], &[None, None]),
+      Test.equals("a UTF-32LE mark wins over the UTF-16LE mark it starts with", &decoded("fffe00004b000000", Encoding.Utf8), &Some("K")),
+      Test.equals("a UTF-32BE mark is honoured and dropped", &decoded("0000feff0000004b", Encoding.Latin1), &Some("K")),
+      Test.equals("a UTF-32 mark alone is empty text", &[decoded("fffe0000", Encoding.Utf8), decoded("0000feff", Encoding.Utf8)], &[Some(""), Some("")]),
+      Test.equals("empty bytes are empty text", &[decoded("", Encoding.Utf8), decoded("", Encoding.Ascii), decoded("", Encoding.Latin1), decoded("", Encoding.Utf16Le), decoded("", Encoding.Utf16Be), decoded("", Encoding.Utf32Le), decoded("", Encoding.Utf32Be)], &[Some(""), Some(""), Some(""), Some(""), Some(""), Some(""), Some("")]),
+      Test.equals("a UTF-8 mark alone is empty text", &decoded("efbbbf", Encoding.Latin1), &Some("")),
+      Test.equals("a UTF-16 mark alone is empty text", &[decoded("fffe", Encoding.Utf8), decoded("feff", Encoding.Utf8)], &[Some(""), Some("")]),
+      Test.equals("a lone mark byte is not a mark", &decoded("ff", Encoding.Latin1), &Some("ÿ")),
+      Test.equals("every encoding has its name", &[Encoding.name(&Encoding.Utf8), Encoding.name(&Encoding.Ascii), Encoding.name(&Encoding.Latin1), Encoding.name(&Encoding.Utf16Le), Encoding.name(&Encoding.Utf16Be), Encoding.name(&Encoding.Utf32Le), Encoding.name(&Encoding.Utf32Be)], &["UTF-8", "ASCII", "Latin-1", "UTF-16LE", "UTF-16BE", "UTF-32LE", "UTF-32BE"])
+    ])
+  let ran = Test.run(&checks)
+  for failure in Test.failuresOf(&ran) {
+    let _reported = Io.writeErrorLine(failure)
+  }
+  Test.report(&ran)
+}

@@ -1,0 +1,71 @@
+/** @Test.Discovery.Suite — given, probed, and cascaded files */
+module PuduLangEnvironment.DiscoveryTest
+
+import Std.Env as Env
+import Std.Fs as Fs
+import Std.Io as Io
+import Std.Map as Map
+import Std.Path as Path
+import Std.Result as Result
+import Std.Test as Test
+import PuduLangEnvironment.Discovery as Discovery
+import PuduLangEnvironment as Environment
+import PuduLangEnvironment.Options as Options
+
+/// The paths discovery answers, or its problem.
+fn paths(options: Options.Options, process: Array[(Str, Str)]) -> Result[Array[Str], Environment.Problem] {
+  Ok(Discovery.discover(&options, &Map.fromPairs(&process)) ?.paths)
+}
+
+/// What discovery skipped, or its problem.
+fn skipped(options: Options.Options) -> Result[Array[Environment.Problem], Environment.Problem] {
+  Ok(Discovery.discover(&options, &Map.empty()) ?.skipped)
+}
+
+/// Runs the suite.
+fn main() -> Int {
+  let made = Result.unwrapOr(Fs.temporaryDirectoryIn(Env.temporaryDirectory(), "pudu-env-discovery-"), ".")
+  let root = Result.unwrapOr(Fs.canonical(made), made)
+  let project = Path.join(root, "project")
+  let deep = Path.join(project, "a/b/c")
+  let _made = Io.makeDirectory(project)
+  let _a = Io.makeDirectory(Path.join(project, "a"))
+  let _b = Io.makeDirectory(Path.join(project, "a/b"))
+  let _c = Io.makeDirectory(deep)
+  let _env = Io.write(Path.join(project, ".env"), "A=1")
+  let _local = Io.write(Path.join(project, ".env.local"), "A=2")
+  let _test = Io.write(Path.join(project, ".env.test.local"), "A=3")
+  let base = Options.defaults().inDirectory(project)
+  let empty = Path.join(project, "a")
+  let checks = Test.suite("Discovery", &[
+      Test.equals("a relative path is joined to the directory", &Discovery.locate("conf", "app.env"), &Path.join("conf", "app.env")),
+      Test.equals("an absolute path is kept", &Discovery.locate("conf", "/etc/app.env"), &"/etc/app.env"),
+      Test.equals("the working directory leaves a path as it is", &[Discovery.locate(".", "a.env"), Discovery.locate("", "a.env")], &["a.env", "a.env"]),
+      Test.equals("given files are located in order", &paths(base.withFiles(&["x.env", "y.env"]), []), &Ok([Path.join(project, "x.env"), Path.join(project, "y.env")])),
+      Test.equals("probing finds .env in the start directory", &paths(base.withProbe(), []), &Ok([Path.join(project, ".env")])),
+      Test.equals("probing climbs to a parent", &paths(base.inDirectory(deep).withProbeLevels(3), []), &Ok([Path.join(project, ".env")])),
+      Test.equals("probing stops at its level", &skipped(base.inDirectory(deep).withProbeLevels(2)), &Ok([Environment.NotFound([Path.join(deep, ".env"), Path.join(project, "a/b/.env"), Path.join(project, "a/.env")])])),
+      Test.equals("probing that finds nothing reads nothing", &paths(base.inDirectory(deep).withProbeLevels(0), []), &Ok([])),
+      Test.equals("strict probing that finds nothing is refused", &paths(base.inDirectory(deep).withProbeLevels(0).withStrict(), []), &Err(Environment.NotFound([Path.join(deep, ".env")]))),
+      Test.equals("probe answers the directory holding a name", &Discovery.probe(deep, 4, &[".env.local"]), &Some(project)),
+      Test.equals("probe answers none past its levels", &Discovery.probe(deep, 1, &[".env"]), &None),
+      Test.equals("probe stops at the root", &Discovery.probe("/", 5, &["pudu-env-never-there"]), &None),
+      Test.equals("the cascade reads the shared files that exist", &paths(base.withCascade(), []), &Ok([Path.join(project, ".env"), Path.join(project, ".env.local")])),
+      Test.equals("the cascade adds the named layers that exist", &paths(base.withEnvironment("test"), []), &Ok([Path.join(project, ".env"), Path.join(project, ".env.local"), Path.join(project, ".env.test.local")])),
+      Test.equals("the cascade takes its name from PUDU_ENV", &paths(base.withCascade(), [("PUDU_ENV", "test")]), &Ok([Path.join(project, ".env"), Path.join(project, ".env.local"), Path.join(project, ".env.test.local")])),
+      Test.equals("the cascade takes its name from PROFILE", &paths(base.withCascade(), [("PROFILE", "test")]), &Ok([Path.join(project, ".env"), Path.join(project, ".env.local"), Path.join(project, ".env.test.local")])),
+      Test.equals("an unsafe name is refused even when lenient", &paths(base.withEnvironment("../secrets"), []), &Err(Environment.UnsafeEnvironmentName("../secrets"))),
+      Test.equals("an unsafe name from a variable is refused", &paths(base.withCascade(), [("PUDU_ENV", "a/b")]), &Err(Environment.UnsafeEnvironmentName("a/b"))),
+      Test.equals("a cascade with no file records what it looked for", &skipped(base.inDirectory(empty).withCascade()), &Ok([Environment.NotFound([Path.join(empty, ".env"), Path.join(empty, ".env.local")])])),
+      Test.equals("a strict cascade with no file is refused", &paths(base.inDirectory(empty).withCascade().withStrict(), []), &Err(Environment.NotFound([Path.join(empty, ".env"), Path.join(empty, ".env.local")]))),
+      Test.equals("the cascade probes upward", &paths(base.inDirectory(deep).withEnvironment("test").withProbe(), []), &Ok([Path.join(project, ".env"), Path.join(project, ".env.local"), Path.join(project, ".env.test.local")])),
+      Test.equals("a probing cascade that finds nothing lists every path", &skipped(base.inDirectory(deep).withCascade().withProbeLevels(1)), &Ok([Environment.NotFound([Path.join(deep, ".env"), Path.join(deep, ".env.local"), Path.join(project, "a/b/.env"), Path.join(project, "a/b/.env.local")])])),
+      Test.equals("a strict probing cascade that finds nothing is refused", &paths(base.inDirectory(deep).withCascade().withProbeLevels(0).withStrict(), []), &Err(Environment.NotFound([Path.join(deep, ".env"), Path.join(deep, ".env.local")])))
+    ])
+  let _cleared = Fs.removeTree(root)
+  let ran = Test.run(&checks)
+  for failure in Test.failuresOf(&ran) {
+    let _reported = Io.writeErrorLine(failure)
+  }
+  Test.report(&ran)
+}

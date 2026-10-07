@@ -1,0 +1,24 @@
+/** @Test.Utils.Template.Suite — numbered slots in message text */
+module PuduLangEnvironment.Utils.TemplateTest
+
+import Std.Io as Io
+import Std.Test as Test
+import PuduLangEnvironment.Utils.Template as Template
+
+/// Runs the suite.
+fn main() -> Int {
+  let checks = Test.suite("Utils.Template", &[
+      Test.equals("each slot takes its value", &Template.fill("<1> then <2>", &["a", "b"]), &"a then b"),
+      Test.equals("a slot used twice is filled twice", &Template.fill("<1>/<1>", &["x"]), &"x/x"),
+      Test.equals("a slot without a value is kept", &Template.fill("<1> <2>", &["only"]), &"only <2>"),
+      Test.equals("text without slots is unchanged", &Template.fill("plain", &["unused"]), &"plain"),
+      Test.equals("a value holding slot text is not filled again", &Template.fill("<1> <2>", &["<2>", "b"]), &"<2> b"),
+      Test.equals("angle brackets that are not slots are kept", &Template.fill("a < b > c <x> <", &["v"]), &"a < b > c <x> <"),
+      Test.equals("slot zero has no value", &Template.fill("<0>", &["v"]), &"<0>")
+    ])
+  let ran = Test.run(&checks)
+  for failure in Test.failuresOf(&ran) {
+    let _reported = Io.writeErrorLine(failure)
+  }
+  Test.report(&ran)
+}

@@ -1,0 +1,27 @@
+/** @Environment.Configuration.Module — variables layered over application configuration */
+module PuduLangEnvironment.Configuration
+
+import Std.App.Config as Config
+import Std.Map as Map
+import PuduLangEnvironment.Domain.Keys as Keys
+import PuduLangEnvironment.Variables as Variables
+
+/** @Environment.Configuration.Overlaying — configuration with loaded variables over it */
+export trait Overlaying {
+  fn withVariables(self: &Self, variables: &Variables.Variables) -> Self
+}
+
+impl Overlaying for Config.Config {
+  /// The same configuration with each setting it declares replaced by the variable its key names,
+  /// `server.port` by `SERVER_PORT`, when that is set and not empty, recorded as coming from the
+  /// environment. Variables no setting declares are left out.
+  fn withVariables(self: &Self, variables: &Variables.Variables) -> Self {
+    var settings = self.settings
+    for key in Map.keys(&self.settings) {
+      if let Some(held) = Variables.find(variables, Keys.fromSetting(key)) {
+        settings = settings.insert(key, Config.Setting{value: held, source: Config.Environment})
+      }
+    }
+    Config.Config{..*self, settings: settings}
+  }
+}

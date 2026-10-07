@@ -1,0 +1,150 @@
+/** @Domain.Encoding.Module — bytes to text in a declared encoding */
+module PuduLangEnvironment.Domain.Encoding
+
+import Std.Bytes as Bytes
+import Std.Option as Option
+import Std.Result as Result
+
+/** @Domain.Encoding.Encoding — how an environment file's bytes spell text */
+export type Encoding
+  = Utf8
+  | Ascii
+  | Latin1
+  | Utf16Le
+  | Utf16Be
+  | Utf32Le
+  | Utf32Be
+
+/// The first octet value ASCII does not define.
+const ASCII_LIMIT: Int = 0x80
+
+/// The first unit of a UTF-16 surrogate pair.
+const HIGH_SURROGATE_FIRST: Int = 0xD800
+
+/// The last first unit of a UTF-16 surrogate pair.
+const HIGH_SURROGATE_LAST: Int = 0xDBFF
+
+/// The first second unit of a UTF-16 surrogate pair.
+const LOW_SURROGATE_FIRST: Int = 0xDC00
+
+/// The last second unit of a UTF-16 surrogate pair.
+const LOW_SURROGATE_LAST: Int = 0xDFFF
+
+/// The first code point a surrogate pair spells.
+const SUPPLEMENTARY_FIRST: Int = 0x10000
+
+/// How many code points one high surrogate spans.
+const SURROGATE_SPAN: Int = 0x400
+
+/// The text the bytes spell. A UTF-8, UTF-32, or UTF-16 byte-order mark selects its encoding and
+/// is dropped; otherwise `declared` applies. Bytes that do not spell text answer `None`.
+export fn decode(data: &Bytes, declared: Encoding) -> Option[Str] {
+  let octets = data.toArray().map(|octet: UInt8| Option.unwrapOr(convertInteger[Int](octet), 0))
+  if startsWith(&octets, &[0xEF, 0xBB, 0xBF]) { return Result.ok(Bytes.toText(&data.drop(3))) }
+  if startsWith(&octets, &[0xFF, 0xFE, 0x00, 0x00]) { return utf32(&octets.slice(4, octets.length()), true) }
+  if startsWith(&octets, &[0x00, 0x00, 0xFE, 0xFF]) { return utf32(&octets.slice(4, octets.length()), false) }
+  if startsWith(&octets, &[0xFF, 0xFE]) { return utf16(&octets.slice(2, octets.length()), true) }
+  if startsWith(&octets, &[0xFE, 0xFF]) { return utf16(&octets.slice(2, octets.length()), false) }
+  match declared {
+    case Utf8 => Result.ok(Bytes.toText(data))
+    case Ascii => ascii(&octets)
+    case Latin1 => Some(latin1(&octets))
+    case Utf16Le => utf16(&octets, true)
+    case Utf16Be => utf16(&octets, false)
+    case Utf32Le => utf32(&octets, true)
+    case Utf32Be => utf32(&octets, false)
+  }
+}
+
+/// The encoding's conventional name.
+export fn name(encoding: &Encoding) -> Str {
+  match encoding {
+    case Utf8 => "UTF-8"
+    case Ascii => "ASCII"
+    case Latin1 => "Latin-1"
+    case Utf16Le => "UTF-16LE"
+    case Utf16Be => "UTF-16BE"
+    case Utf32Le => "UTF-32LE"
+    case Utf32Be => "UTF-32BE"
+  }
+}
+
+/// Whether the octets begin with the mark.
+fn startsWith(octets: &Array[Int], mark: &Array[Int]) -> Bool {
+  octets.length() >= mark.length() && octets.slice(0, mark.length()) == *mark
+}
+
+/// Each octet as the character with its code, when every octet is below the first code ASCII
+/// leaves undefined.
+fn ascii(octets: &Array[Int]) -> Option[Str] {
+  for octet in octets {
+    if octet >= ASCII_LIMIT { return None }
+  }
+  Some(latin1(octets))
+}
+
+/// Each octet as the character with its code.
+fn latin1(octets: &Array[Int]) -> Str {
+  var pieces: Array[Str] = []
+  for octet in octets {
+    if let Some(symbol) = charFromCode(octet) { pieces = pieces.push(symbol.toText()) }
+  }
+  pieces.join("")
+}
+
+/// The text of UTF-16 code units in little- or big-endian order, joining surrogate pairs; an odd
+/// length or an unpaired surrogate answers `None`, a lone low surrogate because it is no character.
+fn utf16(octets: &Array[Int], littleEndian: Bool) -> Option[Str] {
+  if octets.length() % 2 == 1 { return None }
+  let units = octets.length() / 2
+  var pieces: Array[Str] = []
+  var at = 0
+  while at < units {
+    let unit = unitAt(octets, at, littleEndian)
+    var code = unit
+    if unit >= HIGH_SURROGATE_FIRST && unit <= HIGH_SURROGATE_LAST {
+      if at + 1 >= units { return None }
+      let low = unitAt(octets, at + 1, littleEndian)
+      if low < LOW_SURROGATE_FIRST || low > LOW_SURROGATE_LAST { return None }
+      code = SUPPLEMENTARY_FIRST + (unit - HIGH_SURROGATE_FIRST) * SURROGATE_SPAN + (low - LOW_SURROGATE_FIRST)
+      at = at + 1
+    }
+    let symbol = charFromCode(code) ?
+    pieces = pieces.push(symbol.toText())
+    at = at + 1
+  }
+  Some(pieces.join(""))
+}
+
+/// The text of UTF-32 code units in little- or big-endian order; a length that is not a multiple
+/// of four, or a unit that is no character, answers `None`.
+fn utf32(octets: &Array[Int], littleEndian: Bool) -> Option[Str] {
+  if octets.length() % 4 != 0 { return None }
+  var pieces: Array[Str] = []
+  var at = 0
+  while at < octets.length() {
+    let symbol = charFromCode(codeAt(octets, at, littleEndian)) ?
+    pieces = pieces.push(symbol.toText())
+    at = at + 4
+  }
+  Some(pieces.join(""))
+}
+
+/// The UTF-32 code at an octet offset, from its four octets in the stated order.
+fn codeAt(octets: &Array[Int], offset: Int, littleEndian: Bool) -> Int {
+  var code = 0
+  var step = 0
+  while step < 4 {
+    let octet = if littleEndian { octets[offset + 3 - step] } else { octets[offset + step] }
+    code = code * 256 + octet
+    step = step + 1
+  }
+  code
+}
+
+/// The code unit at a position, from its two octets in the stated order.
+fn unitAt(octets: &Array[Int], position: Int, littleEndian: Bool) -> Int {
+  let first = octets[position * 2]
+  let second = octets[position * 2 + 1]
+  if littleEndian { second * 256 + first } else { first * 256 + second }
+}

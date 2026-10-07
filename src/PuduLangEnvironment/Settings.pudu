@@ -1,0 +1,29 @@
+/** @Environment.Settings.Module — typed settings bound from variables */
+module PuduLangEnvironment.Settings
+
+import PuduLangEnvironment.Binding as Binding
+import PuduLangEnvironment.Constants.Messages as Messages
+import PuduLangEnvironment as Environment
+import PuduLangEnvironment.Utils.Template as Template
+import PuduLangEnvironment.Variables as Variables
+import PuduLangValidator.Result as Validated
+import PuduLangValidator.Validator as Validator
+
+/// The settings record bound from the variables by its derived `Bind`, once the validator accepts
+/// it; a refusal names each missing variable, the first malformed one, or each failed property.
+export fn bind[T: Binding.Bind](variables: &Variables.Variables, validator: &Validator.Validator[T]) -> Result[T, Environment.Problem] {
+  check(T.bind(variables) ?, validator)
+}
+
+/// The settings once the validator accepts them. Failures of `Error` severity refuse them as
+/// `Invalid`, naming each property and code but never the validator's message, which may quote a
+/// value; warnings and notes do not refuse.
+export fn check[T](settings: T, validator: &Validator.Validator[T]) -> Result[T, Environment.Problem] {
+  let outcome = Validator.validate(validator, settings)
+  let refusing = outcome.errors.filter(|failure: Validated.Failure| failure.severity == Validated.Error)
+  if refusing.isEmpty() {
+    Ok(settings)
+  } else {
+    Err(Environment.Invalid(refusing.map(|failure: Validated.Failure| Template.fill(Messages.FAILED_PROPERTY, &[failure.propertyName, failure.errorCode]))))
+  }
+}

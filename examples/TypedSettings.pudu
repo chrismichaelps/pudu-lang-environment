@@ -1,0 +1,47 @@
+/** @Examples.TypedSettings.Program — derived binding, validation, and redaction */
+module TypedSettings
+
+import Std.App.Secret as Secret
+import Std.Io as Io
+import PuduLangEnvironment.Binding as Binding
+import PuduLangEnvironment as Environment
+import PuduLangEnvironment.Loader as Loader
+import PuduLangEnvironment.Options as Options
+import PuduLangEnvironment.Settings as Settings
+import PuduLangEnvironment.Source as Source
+import PuduLangValidator.Rule as Rule
+import PuduLangValidator.Rules.Number as NumberRule
+import PuduLangValidator.Validator as Validator
+
+/** @Examples.TypedSettings.Server — what the server reads at start-up */
+type Server = {
+  port: Int,
+  @env("DB_URL") @secret database: Secret.Secret,
+  @default("info") logLevel: Str,
+  workers: Option[Int]
+} derives Binding.Bind, Binding.Redacted
+
+/// Ports from 1024 to 65535.
+fn rules() -> Validator.Validator[Server] {
+  Validator.add(Validator.create(), Rule.build(NumberRule.inclusiveBetween(Rule.ruleFor("port", |given: Server| given.port), 1024, 65535)))
+}
+
+/// Binds the settings from text sources and prints them with the secret hidden.
+fn main() -> Int {
+  let text = "PORT=8443\nDB_URL=postgres://app:s3cret@db/app\nWORKERS=4\n"
+  let options = Options.defaults().withSources(&[Source.Text("inline", text)])
+  let bound = match Loader.load(&options) {
+    case Ok(variables) => Settings.bind(&variables, &rules())
+    case Err(problem) => Err(problem)
+  }
+  match bound {
+    case Ok(server) => {
+      let _shown = Io.writeLine(server.redacted())
+      if server.port == 8443 && server.workers == Some(4) && server.logLevel == "info" { 0 } else { 1 }
+    }
+    case Err(problem) => {
+      let _said = Io.writeErrorLine(Environment.describe(&problem))
+      1
+    }
+  }
+}
