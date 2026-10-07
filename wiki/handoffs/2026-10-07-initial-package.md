@@ -1,8 +1,8 @@
 ---
 type: handoff
-from_role: Implementer
-to_role: Forensic Guardian
-status: in-progress
+from_role: Forensic Guardian
+to_role: Architect
+status: complete
 tags: [handoff, delivery]
 ---
 
@@ -32,16 +32,18 @@ tags: [handoff, delivery]
 
 ## Open / Remaining
 
-- The repository `chrismichaelps/pudu-lang-environment` exists with its wiki enabled; issue #1 is
-  open and pull request #2 carries the package into `dev`.
-- A pre-release audit against the full feature set added the configuration layer
-  ([[src/PuduLangEnvironment/Configuration]]) and ASCII and UTF-32 decoding, and fixed a secret
-  rendered in full by `Redacted` when its field lacked `@secret` ([[src/PuduLangEnvironment/Binding]]).
-- Merging into `dev`, then `main`, the `v0.1.0` release, and the API documentation wiki remain.
+- None for the initial package. A pre-release audit against the full feature set added the
+  configuration layer ([[src/PuduLangEnvironment/Configuration]]) and ASCII and UTF-32 decoding,
+  and fixed a secret rendered in full by `Redacted` when its field lacked `@secret`
+  ([[src/PuduLangEnvironment/Binding]]).
+- Pull request #2 into `dev` and #3 into `main` passed `checks` and `mutation` on Linux.
+- Released 0.1.0 as tag `v0.1.0` with a GitHub release; a fresh project installs
+  `@chrismichaelps/pudu-lang-environment@0.1.0` from the registry, with its validator dependency,
+  and runs. The API documentation is published in the repository wiki.
 
 ## Exact next action
 
-Merge pull request #2 into `dev` once its `checks` and `mutation` jobs pass.
+None; the initial package is released.
 
 ## Links
 

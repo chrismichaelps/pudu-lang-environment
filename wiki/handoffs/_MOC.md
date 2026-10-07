@@ -5,7 +5,7 @@ tags: [moc, handoff]
 
 # Handoffs
 
-- [[handoffs/2026-10-07-initial-package]] — in progress: pull request #2 into `dev`; the release remains.
+- [[handoffs/2026-10-07-initial-package]] — complete: 0.1.0 released as `v0.1.0`.
 
 ## Referenced by
 
