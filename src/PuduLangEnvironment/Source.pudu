@@ -1,0 +1,47 @@
+/** @Environment.Source.Module — where one environment file comes from */
+module PuduLangEnvironment.Source
+
+import Std.Io as Io
+import PuduLangEnvironment.Domain.Encoding as Encoding
+import PuduLangEnvironment.Domain.Parser as Parser
+import PuduLangEnvironment as Environment
+
+/** @Environment.Source.Source — a file path, text, or bytes */
+export type Source
+  = File(Str)
+  | Text(Str, Str)
+  | Data(Str, Bytes)
+
+/// The name a problem gives the source: its path, or the label it was given.
+export fn label(source: &Source) -> Str {
+  match source {
+    case File(path) => path
+    case Text(named, _) => named
+    case Data(named, _) => named
+  }
+}
+
+/// The source's lines, split on `\n` or `\r\n`, after decoding its bytes in `encoding` unless a
+/// byte-order mark says otherwise.
+export fn lines(source: &Source, encoding: Encoding.Encoding) -> Result[Array[Str], Environment.Problem] {
+  match source {
+    case File(path) => {
+      if path.trim().isEmpty() { return Err(Environment.BlankPath) }
+      if !Io.exists(path) { return Err(Environment.MissingFile(path)) }
+      match Io.readAllBytes(path) {
+        case Ok(data) => decoded(path, &data, encoding)
+        case Err(reason) => Err(Environment.Unreadable(path, show(reason)))
+      }
+    }
+    case Text(_, text) => Ok(Parser.lines(text))
+    case Data(named, data) => decoded(named, &data, encoding)
+  }
+}
+
+/// The decoded lines of bytes, or the encoding they failed.
+fn decoded(named: Str, data: &Bytes, encoding: Encoding.Encoding) -> Result[Array[Str], Environment.Problem] {
+  match Encoding.decode(data, encoding) {
+    case Some(text) => Ok(Parser.lines(text))
+    case None => Err(Environment.Undecodable(named, Encoding.name(&encoding)))
+  }
+}

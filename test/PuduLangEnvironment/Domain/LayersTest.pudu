@@ -1,0 +1,37 @@
+/** @Test.Domain.Layers.Suite — merging layers and settling the view */
+module PuduLangEnvironment.Domain.LayersTest
+
+import Std.Io as Io
+import Std.Map as Map
+import Std.Test as Test
+import PuduLangEnvironment.Domain.Layers as Layers
+
+/// An entry.
+fn entry(key: Str, value: Str) -> Layers.Entry { Layers.Entry{key: key, value: value} }
+
+/// Runs the suite.
+fn main() -> Int {
+  let layers = [[entry("A", "1"), entry("B", "2"), entry("A", "3")], [entry("B", "4"), entry("C", "5")]]
+  let loaded = Map.fromPairs(&[("A", "file"), ("B", "file"), ("C", "file")])
+  let process = Map.fromPairs(&[("A", "shell"), ("B", ""), ("D", "shell")])
+  let over = Layers.settle(&loaded, &process, true)
+  let under = Layers.settle(&loaded, &process, false)
+  let checks = Test.suite("Domain.Layers", &[
+      Test.equals("keep stores a new key", &Layers.keep(&Map.empty(), "A", "1", false), &Map.fromPairs(&[("A", "1")])),
+      Test.equals("keep replaces when overwriting", &Layers.keep(&Map.fromPairs(&[("A", "1")]), "A", "2", true), &Map.fromPairs(&[("A", "2")])),
+      Test.equals("keep holds the first without overwriting", &Layers.keep(&Map.fromPairs(&[("A", "1")]), "A", "2", false), &Map.fromPairs(&[("A", "1")])),
+      Test.equals("later entries win when overwriting", &Layers.merge(&layers, true), &Map.fromPairs(&[("A", "3"), ("B", "4"), ("C", "5")])),
+      Test.equals("the first entries win without overwriting", &Layers.merge(&layers, false), &Map.fromPairs(&[("A", "1"), ("B", "2"), ("C", "5")])),
+      Test.equals("no layers merge to nothing", &Layers.merge(&[], true), &Map.empty()),
+      Test.equals("overwriting replaces process values", &over.values, &Map.fromPairs(&[("A", "file"), ("B", "file"), ("C", "file"), ("D", "shell")])),
+      Test.equals("overwriting applies every loaded key in order", &over.applied, &["A", "B", "C"]),
+      Test.equals("without overwriting a set process value is kept", &under.values, &Map.fromPairs(&[("A", "shell"), ("B", "file"), ("C", "file"), ("D", "shell")])),
+      Test.equals("without overwriting an empty or unset process value is applied", &under.applied, &["B", "C"]),
+      Test.equals("applied keys are sorted", &Layers.settle(&Map.fromPairs(&[("Z", "1"), ("M", "2"), ("A", "3")]), &Map.empty(), true).applied, &["A", "M", "Z"])
+    ])
+  let ran = Test.run(&checks)
+  for failure in Test.failuresOf(&ran) {
+    let _reported = Io.writeErrorLine(failure)
+  }
+  Test.report(&ran)
+}

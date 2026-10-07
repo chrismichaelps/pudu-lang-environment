@@ -1,0 +1,125 @@
+/** @Test.Package.VaultTest.Suite — the wiki vault mirrors the source tree */
+module Package.VaultTest
+
+import Std.Io as Io
+import Std.List as List
+import Std.Result as Result
+import Std.Test as Test
+import Std.Text as Text
+
+/// Every file under a directory with the given ending, sorted.
+fn files(directory: Str, ending: Str) -> Array[Str] {
+  var found: Array[Str] = []
+  for path in List.sortBy(&Result.unwrapOr(Io.listPaths(directory), []), fn(left: Str, right: Str) -> Bool { left < right }) {
+    if path.endsWith(ending) {
+      found = found.push(path)
+    } else if !path.contains(".") {
+      found = found.concat(files(path, ending))
+    }
+  }
+  found
+}
+
+/// The text of a file, or empty text when it cannot be read.
+fn read(path: Str) -> Str { Result.unwrapOr(Io.read(path), "") }
+
+/// The mirrored page of a source file.
+fn pageOf(source: Str) -> Str { "wiki/" + source.replace(".pudu", ".md") }
+
+/// The source file a mirrored page describes.
+fn sourceOf(page: Str) -> Str { Text.stripPrefix(page, "wiki/").replace(".md", ".pudu") }
+
+/// The name a page answers to in links: its path under `wiki/` without `.md`.
+fn nameOf(page: Str) -> Str { Text.stripPrefix(page, "wiki/").replace(".md", "") }
+
+/// A page's text before its `Referenced by` section.
+fn bodyOf(text: Str) -> Str {
+  match List.first(&text.split("\n## Referenced by")) {
+    case Some(body) => body
+    case None => text
+  }
+}
+
+/// A page's `Referenced by` section.
+fn backlinksOf(text: Str) -> Str {
+  match List.get(&text.split("\n## Referenced by"), 1) {
+    case Some(section) => section
+    case None => ""
+  }
+}
+
+/// Every link target in the text, without alias or heading.
+fn links(text: Str) -> Array[Str] {
+  var found: Array[Str] = []
+  for piece in List.drop(&text.split("[["), 1) {
+    if let Some(inside) = List.first(&piece.split("]]")) {
+      if let Some(target) = List.first(&inside.split("|")) {
+        if let Some(page) = List.first(&target.split("#")) { found = found.push(page) }
+      }
+    }
+  }
+  found
+}
+
+/// The names every exported function of a source file declares.
+fn exportedFunctions(source: Str) -> Array[Str] {
+  var names: Array[Str] = []
+  for line in read(source).split("\n") {
+    if line.startsWith("export fn ") {
+      let rest = Text.stripPrefix(line, "export fn ")
+      if let Some(head) = List.first(&rest.split("(")) {
+        if let Some(name) = List.first(&head.split("[")) { names = names.push(name) }
+      }
+    }
+  }
+  names
+}
+
+/// The root page, which lists no backlinks.
+const ROOT: Str = "00-INDEX"
+
+/// Runs the suite.
+fn main() -> Int {
+  let sources = files("src", ".pudu")
+  let pages = files("wiki", ".md")
+  let mirrored = files("wiki/src", ".md").filter(|page: Str| !page.endsWith("_MOC.md"))
+  let names = pages.map(|page: Str| nameOf(page))
+  let unmirrored = sources.filter(|source: Str| !List.contains(&mirrored, pageOf(source)))
+  let unbacked = mirrored.filter(|page: Str| !List.contains(&sources, sourceOf(page)))
+  let ungrilled = mirrored.filter(|page: Str| !read(page).contains("## Grill Log\n\n- **Q:**"))
+  var unsigned: Array[Str] = []
+  for source in sources {
+    let page = read(pageOf(source))
+    for name in exportedFunctions(source) {
+      if !page.contains("export fn " + name + "(") && !page.contains("export fn " + name + "[") { unsigned = unsigned.push(source + ": " + name) }
+    }
+  }
+  var broken: Array[Str] = []
+  var missingBacklinks: Array[Str] = []
+  for page in pages {
+    let text = read(page)
+    for target in links(bodyOf(text)) {
+      if !List.contains(&names, target) {
+        broken = broken.push(nameOf(page) + " -> " + target)
+      } else if target != nameOf(page) && target != ROOT && !backlinksOf(read("wiki/" + target + ".md")).contains("[[" + nameOf(page) + "]]") {
+        missingBacklinks = missingBacklinks.push(target + " <- " + nameOf(page))
+      }
+    }
+  }
+  let checks = Test.suite("Package.Vault", &[
+      Test.that("the vault and the source tree are found", sources.length() > 1 && mirrored.length() > 1),
+      Test.equals("every source file has its mirrored page", &unmirrored, &[]),
+      Test.equals("every mirrored page has its source file", &unbacked, &[]),
+      Test.equals("every mirrored page has a resolved Grill Log", &ungrilled, &[]),
+      Test.equals("every exported function appears in its page's signatures", &unsigned, &[]),
+      Test.equals("every link names a page", &broken, &[]),
+      Test.equals("every page lists the pages linking to it", &missingBacklinks, &[]),
+      Test.equals("a link keeps its target and drops its alias and heading", &links("see [[a/B|b]] and [[c#Grill Log]]"), &["a/B", "c"]),
+      Test.equals("a function's name stops at its parameters", &exportedFunctions("src/PuduLangEnvironment/Utils/Template.pudu"), &["fill"])
+    ])
+  let ran = Test.run(&checks)
+  for failure in Test.failuresOf(&ran) {
+    let _reported = Io.writeErrorLine(failure)
+  }
+  Test.report(&ran)
+}

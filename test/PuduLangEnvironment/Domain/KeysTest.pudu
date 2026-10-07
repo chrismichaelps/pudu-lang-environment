@@ -1,0 +1,25 @@
+/** @Test.Domain.Keys.Suite — field names to variable names */
+module PuduLangEnvironment.Domain.KeysTest
+
+import Std.Io as Io
+import Std.Test as Test
+import PuduLangEnvironment.Domain.Keys as Keys
+
+/// Runs the suite.
+fn main() -> Int {
+  let checks = Test.suite("Domain.Keys", &[
+      Test.equals("a lower-case name is upper-cased", &Keys.fromField("port"), &"PORT"),
+      Test.equals("each word is separated", &Keys.fromField("databaseUrl"), &"DATABASE_URL"),
+      Test.equals("a digit before a capital separates", &Keys.fromField("redis2Host"), &"REDIS2_HOST"),
+      Test.equals("a run of capitals stays together", &Keys.fromField("apiURL"), &"API_URL"),
+      Test.equals("a leading capital is not separated", &Keys.fromField("Port"), &"PORT"),
+      Test.equals("an upper snake name is kept", &Keys.fromField("API_KEY"), &"API_KEY"),
+      Test.equals("an underscore is kept", &Keys.fromField("max_retries"), &"MAX_RETRIES"),
+      Test.equals("an empty name stays empty", &Keys.fromField(""), &"")
+    ])
+  let ran = Test.run(&checks)
+  for failure in Test.failuresOf(&ran) {
+    let _reported = Io.writeErrorLine(failure)
+  }
+  Test.report(&ran)
+}

@@ -1,0 +1,158 @@
+/** @Environment.Options.Module — what a load reads and how */
+module PuduLangEnvironment.Options
+
+import PuduLangEnvironment.Constants.Messages as Messages
+import PuduLangEnvironment.Constants.Names as Names
+import PuduLangEnvironment.Domain.Encoding as Encoding
+import PuduLangEnvironment.Source as Source
+
+/** @Environment.Options.Options — every choice a load makes */
+export type Options = {
+  strict: Bool,
+  files: Array[Str],
+  sources: Array[Source.Source],
+  encoding: Encoding.Encoding,
+  trimValues: Bool,
+  overwrite: Bool,
+  probe: Option[Int],
+  exportSyntax: Bool,
+  inlineComments: Bool,
+  expansion: Bool,
+  cascade: Bool,
+  environmentName: Option[Str],
+  directory: Str
+}
+
+/// Lenient, reading `.env` in the working directory as UTF-8, untrimmed, overwriting, with inline
+/// comments and without export syntax, expansion, probing, or the cascade.
+export fn defaults() -> Options {
+  Options {
+    strict: false,
+    files: [Names.DEFAULT_FILE],
+    sources: [],
+    encoding: Encoding.Utf8,
+    trimValues: false,
+    overwrite: true,
+    probe: None,
+    exportSyntax: false,
+    inlineComments: true,
+    expansion: false,
+    cascade: false,
+    environmentName: None,
+    directory: "."
+  }
+}
+
+/// Every reason the options cannot be followed, all at once.
+export fn validate(options: &Options) -> Array[Str] {
+  let givenFiles = options.files != [Names.DEFAULT_FILE]
+  let givenSources = !options.sources.isEmpty()
+  let probing = options.probe != None
+  var problems: Array[Str] = []
+  if options.files.isEmpty() { problems = problems.push(Messages.NO_FILES) }
+  if givenFiles && probing { problems = problems.push(Messages.FILES_WITH_PROBE) }
+  if givenFiles && options.cascade { problems = problems.push(Messages.FILES_WITH_CASCADE) }
+  if givenSources && givenFiles { problems = problems.push(Messages.SOURCES_WITH_FILES) }
+  if givenSources && probing { problems = problems.push(Messages.SOURCES_WITH_PROBE) }
+  if givenSources && options.cascade { problems = problems.push(Messages.SOURCES_WITH_CASCADE) }
+  if let Some(levels) = options.probe {
+    if levels < 0 { problems = problems.push(Messages.NEGATIVE_PROBE) }
+  }
+  problems
+}
+
+/** @Environment.Options.Configuring — options changed one choice at a time */
+export trait Configuring {
+  fn withStrict(self: &Self) -> Self
+  fn withoutStrict(self: &Self) -> Self
+  fn withFiles(self: &Self, paths: &Array[Str]) -> Self
+  fn withSources(self: &Self, given: &Array[Source.Source]) -> Self
+  fn withEncoding(self: &Self, encoding: Encoding.Encoding) -> Self
+  fn withTrimValues(self: &Self) -> Self
+  fn withoutTrimValues(self: &Self) -> Self
+  fn withOverwrite(self: &Self) -> Self
+  fn withoutOverwrite(self: &Self) -> Self
+  fn withProbe(self: &Self) -> Self
+  fn withProbeLevels(self: &Self, levels: Int) -> Self
+  fn withoutProbe(self: &Self) -> Self
+  fn withExportSyntax(self: &Self) -> Self
+  fn withoutExportSyntax(self: &Self) -> Self
+  fn withInlineComments(self: &Self) -> Self
+  fn withoutInlineComments(self: &Self) -> Self
+  fn withExpansion(self: &Self) -> Self
+  fn withoutExpansion(self: &Self) -> Self
+  fn withCascade(self: &Self) -> Self
+  fn withEnvironment(self: &Self, name: Str) -> Self
+  fn withoutCascade(self: &Self) -> Self
+  fn inDirectory(self: &Self, directory: Str) -> Self
+}
+
+impl Configuring for Options {
+  /// The same options refusing a missing or unreadable source.
+  fn withStrict(self: &Self) -> Self { Options{..*self, strict: true} }
+
+  /// The same options skipping and recording a missing or unreadable source.
+  fn withoutStrict(self: &Self) -> Self { Options{..*self, strict: false} }
+
+  /// The same options reading these files in order; no files means `.env`.
+  fn withFiles(self: &Self, paths: &Array[Str]) -> Self {
+    Options{..*self, files: if paths.isEmpty() { [Names.DEFAULT_FILE] } else { *paths }}
+  }
+
+  /// The same options reading these sources instead of files.
+  fn withSources(self: &Self, given: &Array[Source.Source]) -> Self { Options{..*self, sources: *given} }
+
+  /// The same options decoding bytes in this encoding when no byte-order mark says otherwise.
+  fn withEncoding(self: &Self, encoding: Encoding.Encoding) -> Self { Options{..*self, encoding: encoding} }
+
+  /// The same options trimming surrounding space from every value.
+  fn withTrimValues(self: &Self) -> Self { Options{..*self, trimValues: true} }
+
+  /// The same options keeping values as written.
+  fn withoutTrimValues(self: &Self) -> Self { Options{..*self, trimValues: false} }
+
+  /// The same options letting later assignments and loaded values replace earlier ones.
+  fn withOverwrite(self: &Self) -> Self { Options{..*self, overwrite: true} }
+
+  /// The same options keeping the first assignment and every non-empty process variable.
+  fn withoutOverwrite(self: &Self) -> Self { Options{..*self, overwrite: false} }
+
+  /// The same options probing the default number of parent directories for `.env`.
+  fn withProbe(self: &Self) -> Self { Options{..*self, probe: Some(Names.DEFAULT_PROBE_LEVELS)} }
+
+  /// The same options probing this many parent directories.
+  fn withProbeLevels(self: &Self, levels: Int) -> Self { Options{..*self, probe: Some(levels)} }
+
+  /// The same options reading files where they are named.
+  fn withoutProbe(self: &Self) -> Self { Options{..*self, probe: None} }
+
+  /// The same options reading `export KEY=value` as `KEY=value`.
+  fn withExportSyntax(self: &Self) -> Self { Options{..*self, exportSyntax: true} }
+
+  /// The same options reading `export` as part of the key.
+  fn withoutExportSyntax(self: &Self) -> Self { Options{..*self, exportSyntax: false} }
+
+  /// The same options ending an unquoted value at a `#` after whitespace.
+  fn withInlineComments(self: &Self) -> Self { Options{..*self, inlineComments: true} }
+
+  /// The same options keeping `#` in unquoted values.
+  fn withoutInlineComments(self: &Self) -> Self { Options{..*self, inlineComments: false} }
+
+  /// The same options expanding `$NAME` and `${NAME}` in unquoted and double-quoted values.
+  fn withExpansion(self: &Self) -> Self { Options{..*self, expansion: true} }
+
+  /// The same options keeping `$` as written.
+  fn withoutExpansion(self: &Self) -> Self { Options{..*self, expansion: false} }
+
+  /// The same options reading the layered files the environment's name selects.
+  fn withCascade(self: &Self) -> Self { Options{..*self, cascade: true} }
+
+  /// The same options reading the layered files `name` selects.
+  fn withEnvironment(self: &Self, name: Str) -> Self { Options{..*self, cascade: true, environmentName: Some(name)} }
+
+  /// The same options reading given files instead of the cascade.
+  fn withoutCascade(self: &Self) -> Self { Options{..*self, cascade: false} }
+
+  /// The same options locating relative files and starting probes in `directory`.
+  fn inDirectory(self: &Self, directory: Str) -> Self { Options{..*self, directory: directory} }
+}

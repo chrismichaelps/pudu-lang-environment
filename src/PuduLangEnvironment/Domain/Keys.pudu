@@ -1,0 +1,17 @@
+/** @Domain.Keys.Module — field names to environment variable names */
+module PuduLangEnvironment.Domain.Keys
+
+import Std.Char as Char
+
+/// The variable a field reads when no `@env` names one: the field's name in upper snake case,
+/// with `_` before each upper-case letter that follows a lower-case letter or a digit.
+export fn fromField(name: Str) -> Str {
+  var pieces: Array[Str] = []
+  var previous = ' '
+  for symbol in name {
+    if Char.isUpper(symbol) && (Char.isLower(previous) || Char.isDigit(previous)) { pieces = pieces.push("_") }
+    pieces = pieces.push(Char.toUpper(symbol).toText())
+    previous = symbol
+  }
+  pieces.join("")
+}

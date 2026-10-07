@@ -1,0 +1,44 @@
+/** @Examples.Layered.Program — environment cascade and overwrite rules */
+module Layered
+
+import Std.Fs as Fs
+import Std.Io as Io
+import Std.Map as Map
+import Std.Path as Path
+import PuduLangEnvironment.Loader as Loader
+import PuduLangEnvironment.Options as Options
+import PuduLangEnvironment.Variables as Variables
+
+/// Writes four layers and loads them for the `test` environment, over a process that already sets
+/// `LOG_LEVEL`, once overwriting and once not.
+fn run(project: Str) -> Result[Int, Fs.FsError] {
+  let _shared = Io.write(Path.join(project, ".env"), "HOST=localhost\nPORT=8080\nLOG_LEVEL=info\n")
+  let _local = Io.write(Path.join(project, ".env.local"), "PORT=8081\n")
+  let _named = Io.write(Path.join(project, ".env.test"), "HOST=test.internal\nURL=http://$HOST:$PORT\n")
+  let _mine = Io.write(Path.join(project, ".env.test.local"), "PORT=9000\n")
+  let process = Map.fromPairs(&[("LOG_LEVEL", "debug")])
+  let options = Options.defaults().inDirectory(project).withEnvironment("test").withExpansion()
+  let layered = Loader.loadOver(&options, &process)
+  let deferring = Loader.loadOver(&options.withoutOverwrite(), &process)
+  match (layered, deferring) {
+    case (Ok(variables), Ok(kept)) => {
+      for source in variables.sources { let _listed = Io.writeLine("read " + Path.nameOf(source)) }
+      let url = Variables.find(&variables, "URL")
+      let port = Variables.find(&variables, "PORT")
+      let level = Variables.find(&variables, "LOG_LEVEL")
+      let keptLevel = Variables.find(&kept, "LOG_LEVEL")
+      let _shown = Io.writeLine("URL=" + show(url) + " PORT=" + show(port) + " LOG_LEVEL=" + show(level) + " kept LOG_LEVEL=" + show(keptLevel))
+      Ok(if url == Some("http://test.internal:8081") && port == Some("9000") && level == Some("info") && keptLevel == Some("debug") { 0 } else { 1 })
+    }
+    case _ => Ok(1)
+  }
+}
+
+/// Runs the example and answers 0 when later layers win, a reference reads the value known where it
+/// is written, and a load without overwriting leaves the process its own value.
+fn main() -> Int {
+  match Fs.withTemporaryDirectory("layered-", run) {
+    case Ok(status) => status
+    case Err(_) => 1
+  }
+}

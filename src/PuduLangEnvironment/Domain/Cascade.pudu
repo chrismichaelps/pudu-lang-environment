@@ -1,0 +1,40 @@
+/** @Domain.Cascade.Module — environment names and their layered files */
+module PuduLangEnvironment.Domain.Cascade
+
+import Std.Char as Char
+import PuduLangEnvironment.Constants.Names as Names
+
+/// The explicit name when it is not blank, else the first naming variable that is set and not
+/// blank, trimmed.
+export fn chooseName(explicit: &Option[Str], process: &Map[Str, Str]) -> Option[Str] {
+  if let Some(named) = explicit {
+    if !named.trim().isEmpty() { return Some(named.trim()) }
+  }
+  for variable in Names.ENVIRONMENT_NAME_VARIABLES {
+    if let Some(held) = process.get(variable) {
+      if !held.trim().isEmpty() { return Some(held.trim()) }
+    }
+  }
+  None
+}
+
+/// Whether a name can extend `.env` without leaving its directory: not blank, no `..`, and no
+/// character a file name cannot hold on some platform.
+export fn isSafe(name: Str) -> Bool {
+  if name.trim().isEmpty() || name.contains(Names.PARENT_STEP) { return false }
+  for symbol in name {
+    if Names.UNSAFE_NAME_CHARACTERS.contains(symbol) || Char.isControl(symbol) { return false }
+  }
+  true
+}
+
+/// The cascade's file names in reading order: `.env`, `.env.local`, and with a name,
+/// `.env.<name>` and `.env.<name>.local`.
+export fn candidates(name: &Option[Str]) -> Array[Str] {
+  let base = Names.DEFAULT_FILE
+  let shared = [base, base + Names.LOCAL_SUFFIX]
+  match name {
+    case Some(named) => shared.concat([base + "." + named, base + "." + named + Names.LOCAL_SUFFIX])
+    case None => shared
+  }
+}

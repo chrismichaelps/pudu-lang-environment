@@ -1,0 +1,72 @@
+/** @Test.Binding.Suite — records bound from variables and redacted */
+module PuduLangEnvironment.BindingTest
+
+import Std.App.Secret as Secret
+import Std.Decimal as Decimal
+import Std.Io as Io
+import Std.Map as Map
+import Std.Result as Result
+import Std.Test as Test
+import PuduLangEnvironment.Binding as Binding
+import PuduLangEnvironment as Environment
+import PuduLangEnvironment.Variables as Variables
+
+/// The secret every rendering check looks for.
+const SECRET: Str = "sk-live-0123456789"
+
+/** @Test.Binding.Service — every kind a variable can hold */
+type Service = {
+  port: Int,
+  @env("SERVICE_HOST") host: Str,
+  @default("info") logLevel: Str,
+  ratio: Float64,
+  price: Decimal,
+  debug: Bool,
+  @secret apiKey: Secret.Secret,
+  replicas: Option[Int]
+} derives Binding.Bind, Binding.Redacted
+
+/// A view over the given variables.
+fn over(pairs: Array[(Str, Str)]) -> Variables.Variables {
+  Variables.settled(&Map.empty(), &Map.fromPairs(&pairs), true, [], [])
+}
+
+/// The service the variables bind to.
+fn bound(pairs: Array[(Str, Str)]) -> Result[Service, Environment.Problem] { Service.bind(&over(pairs)) }
+
+/// Every variable the service needs.
+fn complete() -> Array[(Str, Str)] {
+  [("PORT", "8080"), ("SERVICE_HOST", "db.local"), ("RATIO", "0.5"), ("PRICE", "1.25"), ("DEBUG", "false"), ("API_KEY", SECRET)]
+}
+
+/// Runs the suite.
+fn main() -> Int {
+  let service = bound(complete())
+  let rendered = match service {
+    case Ok(held) => held.redacted()
+    case Err(_) => ""
+  }
+  let checks = Test.suite("Binding", &[
+      Test.equals("each field reads its variable", &Result.map(service, |held: Service| (held.port, held.host, held.ratio, held.debug)), &Ok((8080, "db.local", 0.5, false))),
+      Test.equals("a decimal field is exact", &Result.ok(Result.map(service, |held: Service| held.price)), &Decimal.parse("1.25")),
+      Test.equals("an unset field takes its default", &Result.map(service, |held: Service| held.logLevel), &Ok("info")),
+      Test.equals("a set field ignores its default", &Result.map(bound(complete().push(("LOG_LEVEL", "debug"))), |held: Service| held.logLevel), &Ok("debug")),
+      Test.equals("an unset optional field is none", &Result.map(service, |held: Service| held.replicas), &Ok(None)),
+      Test.equals("a set optional field is read", &Result.map(bound(complete().push(("REPLICAS", "3"))), |held: Service| held.replicas), &Ok(Some(3))),
+      Test.equals("a secret field keeps its value", &Result.map(service, |held: Service| Secret.reveal(&held.apiKey)), &Ok(SECRET)),
+      Test.equals("every unset required variable is reported at once", &Result.map(bound([("PORT", "1")]), |held: Service| held.port), &Err(Environment.Missing(["SERVICE_HOST", "RATIO", "PRICE", "DEBUG", "API_KEY"]))),
+      Test.equals("an empty variable is unset", &Result.map(bound(complete().push(("PORT", ""))), |held: Service| held.port), &Err(Environment.Missing(["PORT"]))),
+      Test.equals("a malformed variable names its key and kind", &Result.map(bound(complete().push(("PORT", "eighty"))), |held: Service| held.port), &Err(Environment.Malformed("PORT", "a whole number"))),
+      Test.equals("a malformed optional variable is refused", &Result.map(bound(complete().push(("REPLICAS", "many"))), |held: Service| held.replicas), &Err(Environment.Malformed("REPLICAS", "a whole number"))),
+      Test.equals("a malformed truth value is refused", &Result.map(bound(complete().push(("DEBUG", "yes"))), |held: Service| held.debug), &Err(Environment.Malformed("DEBUG", "true or false"))),
+      Test.equals("a malformed float and decimal are refused", &[Result.map(bound(complete().push(("RATIO", "half"))), |held: Service| held.port), Result.map(bound(complete().push(("PRICE", "x"))), |held: Service| held.port)], &[Err(Environment.Malformed("RATIO", "a floating-point number")), Err(Environment.Malformed("PRICE", "a decimal number"))]),
+      Test.that("a redacted rendering hides secret fields", !rendered.contains(SECRET) && rendered.contains("apiKey: [REDACTED]")),
+      Test.that("a redacted rendering shows other fields", rendered.startsWith("Service\{port: 8080, host: \"db.local\"") && rendered.contains("replicas: None")),
+      Test.that("a problem never quotes a value", !Environment.describe(&Environment.Malformed("PORT", "a whole number")).contains("eighty"))
+    ])
+  let ran = Test.run(&checks)
+  for failure in Test.failuresOf(&ran) {
+    let _reported = Io.writeErrorLine(failure)
+  }
+  Test.report(&ran)
+}

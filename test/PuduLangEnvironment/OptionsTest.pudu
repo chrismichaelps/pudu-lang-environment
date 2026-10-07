@@ -1,0 +1,55 @@
+/** @Test.Options.Suite — defaults, conflicts, and the fluent chain */
+module PuduLangEnvironment.OptionsTest
+
+import Std.Io as Io
+import Std.Test as Test
+import PuduLangEnvironment.Domain.Encoding as Encoding
+import PuduLangEnvironment.Options as Options
+import PuduLangEnvironment.Source as Source
+
+/// Runs the suite.
+fn main() -> Int {
+  let base = Options.defaults()
+  let chained = base.withStrict().withTrimValues().withoutOverwrite().withExportSyntax().withoutInlineComments().withExpansion().withEncoding(Encoding.Latin1).inDirectory("conf")
+  let undone = chained.withoutStrict().withoutTrimValues().withOverwrite().withoutExportSyntax().withInlineComments().withoutExpansion().withEncoding(Encoding.Utf8).inDirectory(".")
+  let sources = [Source.Text("inline", "A=1")]
+  let checks = Test.suite("Options", &[
+      Test.equals("defaults are lenient and read .env", &(base.strict, base.files, base.directory), &(false, [".env"], ".")),
+      Test.equals("defaults overwrite and read inline comments only", &(base.overwrite, base.inlineComments, base.trimValues, base.exportSyntax, base.expansion), &(true, true, false, false, false)),
+      Test.equals("defaults do not probe or cascade", &(base.probe, base.cascade, base.environmentName, base.sources.isEmpty()), &(None, false, None, true)),
+      Test.equals("defaults are valid", &Options.validate(&base), &[]),
+      Test.equals("the chain sets every flag", &(chained.strict, chained.trimValues, chained.overwrite, chained.exportSyntax, chained.inlineComments, chained.expansion, chained.directory), &(true, true, false, true, false, true, "conf")),
+      Test.equals("the chain sets the encoding", &chained.encoding, &Encoding.Latin1),
+      Test.equals("the chain undoes every flag", &undone, &base),
+      Test.equals("files are kept in order", &base.withFiles(&["a.env", "b.env"]).files, &["a.env", "b.env"]),
+      Test.equals("no files means .env", &base.withFiles(&["x"]).withFiles(&[]).files, &[".env"]),
+      Test.equals("probing uses four levels by default", &base.withProbe().probe, &Some(4)),
+      Test.equals("probing levels may be set", &base.withProbeLevels(2).probe, &Some(2)),
+      Test.equals("probing may be turned off", &base.withProbe().withoutProbe().probe, &None),
+      Test.equals("the cascade may be turned on and off", &(base.withCascade().cascade, base.withCascade().withoutCascade().cascade), &(true, false)),
+      Test.equals("naming an environment turns the cascade on", &(base.withEnvironment("test").cascade, base.withEnvironment("test").environmentName), &(true, Some("test"))),
+      Test.equals("sources are kept", &base.withSources(&sources).sources, &sources),
+      Test.equals("files with probing are refused", &Options.validate(&base.withFiles(&["a"]).withProbe()), &["files cannot be given while probing"]),
+      Test.equals("files with the cascade are refused", &Options.validate(&base.withFiles(&["a"]).withCascade()), &["files cannot be given with the environment cascade"]),
+      Test.equals("sources with files are refused", &Options.validate(&base.withFiles(&["a"]).withSources(&sources)), &["sources and files cannot both be given"]),
+      Test.equals("sources with probing are refused", &Options.validate(&base.withSources(&sources).withProbe()), &["sources cannot be given while probing"]),
+      Test.equals("sources with the cascade are refused", &Options.validate(&base.withSources(&sources).withCascade()), &["sources cannot be given with the environment cascade"]),
+      Test.equals("negative probe levels are refused", &Options.validate(&base.withProbeLevels(-1)), &["probe levels must not be negative"]),
+      Test.equals("zero probe levels are accepted", &Options.validate(&base.withProbeLevels(0)), &[]),
+      Test.equals("an empty file list is refused", &Options.validate(&Options.Options{..base, files: []}), &["files must name at least one file"]),
+      Test.equals("the default file combines with probing and the cascade", &Options.validate(&base.withProbe().withCascade()), &[]),
+      Test.equals("every conflict is reported at once", &Options.validate(&base.withFiles(&["a"]).withSources(&sources).withProbeLevels(-2).withCascade()), &[
+          "files cannot be given while probing",
+          "files cannot be given with the environment cascade",
+          "sources and files cannot both be given",
+          "sources cannot be given while probing",
+          "sources cannot be given with the environment cascade",
+          "probe levels must not be negative"
+        ])
+    ])
+  let ran = Test.run(&checks)
+  for failure in Test.failuresOf(&ran) {
+    let _reported = Io.writeErrorLine(failure)
+  }
+  Test.report(&ran)
+}

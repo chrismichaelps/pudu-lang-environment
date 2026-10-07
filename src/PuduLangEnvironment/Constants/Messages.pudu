@@ -1,0 +1,71 @@
+/** @Constants.Messages.Module — every sentence the package reports */
+module PuduLangEnvironment.Constants.Messages
+
+/// A file source with a blank path.
+export const BLANK_PATH: Str = "An environment file path is blank."
+
+/// A file that does not exist; `<1>` is its path.
+export const MISSING_FILE: Str = "The environment file '<1>' does not exist."
+
+/// A file that could not be read; `<1>` is its path and `<2>` the system's reason.
+export const UNREADABLE: Str = "The environment file '<1>' could not be read: <2>"
+
+/// Bytes that do not decode; `<1>` is the source and `<2>` the encoding.
+export const UNDECODABLE: Str = "The environment source '<1>' is not valid <2>."
+
+/// A quoted value never closed; `<1>` is the source, `<2>` the line, and `<3>` the key.
+export const UNCLOSED_QUOTE: Str = "The value of '<3>' in '<1>' opens a quote on line <2> that is never closed."
+
+/// Nothing found by discovery; `<1>` is every path looked for.
+export const NOT_FOUND: Str = "No environment file was found among: <1>"
+
+/// An environment name that could leave its directory; `<1>` is the name.
+export const UNSAFE_ENVIRONMENT_NAME: Str = "The environment name '<1>' is blank or holds a path separator, '..', or a character a file name cannot hold."
+
+/// Options refused at the start of a load; `<1>` is every problem.
+export const INVALID_OPTIONS: Str = "The environment options are invalid: <1>"
+
+/// Keys with no value; `<1>` is every key.
+export const MISSING: Str = "No value is set for: <1>"
+
+/// A value of the wrong kind; `<1>` is the key and `<2>` the kind expected.
+export const MALFORMED: Str = "The value of '<1>' is not <2>."
+
+/// Settings a validator refused; `<1>` is every failed property with its code.
+export const INVALID_SETTINGS: Str = "The settings are invalid: <1>"
+
+/// One failed property; `<1>` is its path and `<2>` the validator's code.
+export const FAILED_PROPERTY: Str = "<1> (<2>)"
+
+/// Given files combined with probing.
+export const FILES_WITH_PROBE: Str = "files cannot be given while probing"
+
+/// Given files combined with the cascade.
+export const FILES_WITH_CASCADE: Str = "files cannot be given with the environment cascade"
+
+/// Sources combined with given files.
+export const SOURCES_WITH_FILES: Str = "sources and files cannot both be given"
+
+/// Sources combined with probing.
+export const SOURCES_WITH_PROBE: Str = "sources cannot be given while probing"
+
+/// Sources combined with the cascade.
+export const SOURCES_WITH_CASCADE: Str = "sources cannot be given with the environment cascade"
+
+/// A negative probe depth.
+export const NEGATIVE_PROBE: Str = "probe levels must not be negative"
+
+/// An empty file list.
+export const NO_FILES: Str = "files must name at least one file"
+
+/// A view; `<1>` is the count of applied keys and `<2>` the sources read.
+export const DESCRIBED: Str = "<1> variables applied from <2>; values are hidden."
+
+/// A view built from no source.
+export const NO_SOURCES: Str = "no source"
+
+/// What separates items listed in one sentence.
+export const LIST_SEPARATOR: Str = ", "
+
+/// What separates problems listed in one sentence.
+export const PROBLEM_SEPARATOR: Str = "; "

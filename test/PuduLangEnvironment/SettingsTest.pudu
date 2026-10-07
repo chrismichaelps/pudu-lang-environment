@@ -1,0 +1,68 @@
+/** @Test.Settings.Suite — bound settings checked by a validator */
+module PuduLangEnvironment.SettingsTest
+
+import Std.Io as Io
+import Std.Map as Map
+import Std.Result as Result
+import Std.Test as Test
+import PuduLangEnvironment.Binding as Binding
+import PuduLangEnvironment as Environment
+import PuduLangEnvironment.Settings as Settings
+import PuduLangEnvironment.Variables as Variables
+import PuduLangValidator.Result as Validated
+import PuduLangValidator.Rule as Rule
+import PuduLangValidator.Rules.Number as NumberRule
+import PuduLangValidator.Rules.Text as TextRule
+import PuduLangValidator.Validator as Validator
+
+/// The token every rendering check looks for.
+const TOKEN: Str = "tok-abcdefghijklmnop"
+
+/** @Test.Settings.Server — settings a server reads at start-up */
+type Server = { port: Int, token: Str } derives Binding.Bind
+
+/// Ports from 1 to 65535 and a token of at least sixteen characters, with a message quoting the value.
+fn server() -> Validator.Validator[Server] {
+  let port = Rule.build(NumberRule.inclusiveBetween(Rule.ruleFor("port", |given: Server| given.port), 1, 65535))
+  let token = Rule.build(Rule.withMessage(TextRule.minimumLength(Rule.ruleFor("token", |given: Server| given.token), 16), "token \{PropertyValue\} is short"))
+  Validator.add(Validator.add(Validator.create(), port), token)
+}
+
+/// The same checks, the token one only a warning.
+fn lenient() -> Validator.Validator[Server] {
+  let token = Rule.build(Rule.withSeverity(TextRule.minimumLength(Rule.ruleFor("token", |given: Server| given.token), 64), Validated.Warning))
+  Validator.add(Validator.create(), token)
+}
+
+/// A view over the given variables.
+fn over(pairs: Array[(Str, Str)]) -> Variables.Variables {
+  Variables.settled(&Map.empty(), &Map.fromPairs(&pairs), true, [], [])
+}
+
+/// Runs the suite.
+fn main() -> Int {
+  let accepted = Settings.bind(&over([("PORT", "8080"), ("TOKEN", TOKEN)]), &server())
+  let refused = Settings.bind(&over([("PORT", "0"), ("TOKEN", "short")]), &server())
+  let codes = match refused {
+    case Err(Environment.Invalid(failures)) => failures
+    case _ => []
+  }
+  let checks = Test.suite("Settings", &[
+      Test.equals("accepted settings are answered", &Result.map(accepted, |given: Server| given.port), &Ok(8080)),
+      Test.equals("a refusal names each property", &codes.map(|failure: Str| failure.split(" ")[0]), &["port", "token"]),
+      Test.that("a refusal names each validator's code", codes.length() == 2 && codes.filter(|failure: Str| failure.contains(" (") && failure.endsWith(")")).length() == 2),
+      Test.that("a refusal never quotes the value its message would", match refused {
+          case Err(problem) => !Environment.describe(&problem).contains("short")
+          case Ok(_) => false
+        }),
+      Test.equals("a missing variable stops before validation", &Result.map(Settings.bind(&over([("PORT", "8080")]), &server()), |given: Server| given.port), &Err(Environment.Missing(["TOKEN"]))),
+      Test.equals("a malformed variable stops before validation", &Result.map(Settings.bind(&over([("PORT", "x"), ("TOKEN", TOKEN)]), &server()), |given: Server| given.port), &Err(Environment.Malformed("PORT", "a whole number"))),
+      Test.equals("warnings do not refuse", &Result.map(Settings.check(Server{port: 1, token: "t"}, &lenient()), |given: Server| given.token), &Ok("t")),
+      Test.equals("a validator without rules accepts", &Result.map(Settings.check(Server{port: 0, token: ""}, &Validator.create()), |given: Server| given.port), &Ok(0))
+    ])
+  let ran = Test.run(&checks)
+  for failure in Test.failuresOf(&ran) {
+    let _reported = Io.writeErrorLine(failure)
+  }
+  Test.report(&ran)
+}

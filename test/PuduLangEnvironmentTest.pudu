@@ -1,0 +1,38 @@
+/** @Test.Root.Suite — problems and their descriptions */
+module PuduLangEnvironmentTest
+
+import Std.Io as Io
+import Std.Test as Test
+import PuduLangEnvironment as Environment
+
+/// Runs the suite.
+fn main() -> Int {
+  let problems = [
+    Environment.BlankPath, Environment.MissingFile(".env"), Environment.Unreadable("a.env", "denied"),
+    Environment.Undecodable("b.env", "UTF-8"), Environment.UnclosedQuote(".env", 3, "KEY"),
+    Environment.NotFound(["/a/.env", "/.env"]), Environment.UnsafeEnvironmentName("../x"),
+    Environment.InvalidOptions(["one", "two"]), Environment.Missing(["A", "B"]), Environment.Malformed("PORT", "a whole number"),
+    Environment.Invalid(["port (GreaterThanValidator)", "url (NotEmptyValidator)"])
+  ]
+  let checks = Test.suite("Environment", &[
+      Test.equals("every problem is described", &problems.map(|problem: Environment.Problem| Environment.describe(&problem)), &[
+          "An environment file path is blank.",
+          "The environment file '.env' does not exist.",
+          "The environment file 'a.env' could not be read: denied",
+          "The environment source 'b.env' is not valid UTF-8.",
+          "The value of 'KEY' in '.env' opens a quote on line 3 that is never closed.",
+          "No environment file was found among: /a/.env, /.env",
+          "The environment name '../x' is blank or holds a path separator, '..', or a character a file name cannot hold.",
+          "The environment options are invalid: one; two",
+          "No value is set for: A, B",
+          "The value of 'PORT' is not a whole number.",
+          "The settings are invalid: port (GreaterThanValidator), url (NotEmptyValidator)"
+        ]),
+      Test.equals("only absent or unreadable sources are skippable", &problems.map(|problem: Environment.Problem| Environment.isSkippable(&problem)), &[true, true, true, true, false, true, false, false, false, false, false])
+    ])
+  let ran = Test.run(&checks)
+  for failure in Test.failuresOf(&ran) {
+    let _reported = Io.writeErrorLine(failure)
+  }
+  Test.report(&ran)
+}

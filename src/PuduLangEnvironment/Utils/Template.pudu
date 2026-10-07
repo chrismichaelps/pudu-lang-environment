@@ -1,0 +1,39 @@
+/** @Utils.Template.Module — fills numbered slots in message text */
+module PuduLangEnvironment.Utils.Template
+
+import Std.List as List
+import Std.Text as Text
+
+/// The template with each `<n>` replaced by the `n`th value, counting from 1, in one pass: text
+/// taken from a value is never filled again. A slot without a value is kept as written.
+export fn fill(template: Str, values: &Array[Str]) -> Str {
+  var text = ""
+  var rest = template
+  loop {
+    match Text.find(rest, "<") {
+      case None => { return text + rest }
+      case Some(open) => {
+        let after = rest.drop(open + 1)
+        let closing = Text.find(after, ">")
+        let number = match closing {
+          case Some(close) => Text.countOf(after.slice(0, close))
+          case None => None
+        }
+        match (closing, number) {
+          case (Some(close), Some(slot)) => {
+            let value = match List.get(values, slot - 1) {
+              case Some(found) => found
+              case None => rest.slice(open, open + close + 2)
+            }
+            text = text + rest.slice(0, open) + value
+            rest = after.drop(close + 1)
+          }
+          case _ => {
+            text = text + rest.slice(0, open + 1)
+            rest = after
+          }
+        }
+      }
+    }
+  }
+}

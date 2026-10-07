@@ -1,0 +1,84 @@
+/** @Test.Loader.Suite — reading, merging, and settling sources */
+module PuduLangEnvironment.LoaderTest
+
+import Std.Bytes as Bytes
+import Std.Env as Env
+import Std.Fs as Fs
+import Std.Io as Io
+import Std.Map as Map
+import Std.Path as Path
+import Std.Result as Result
+import Std.Test as Test
+import PuduLangEnvironment.Domain.Encoding as Encoding
+import PuduLangEnvironment as Environment
+import PuduLangEnvironment.Loader as Loader
+import PuduLangEnvironment.Options as Options
+import PuduLangEnvironment.Source as Source
+import PuduLangEnvironment.Variables as Variables
+
+/// The secret every rendering check looks for.
+const SECRET: Str = "postgres://admin:s3cr3t@db/prod"
+
+/// The merged values over a fixed process environment.
+fn readOver(options: Options.Options) -> Result[Map[Str, Str], Environment.Problem] {
+  Loader.readOver(&options, &Map.fromPairs(&[("HOME", "/home/me"), ("HOST", "shell")]))
+}
+
+/// The pairs in the merged values, sorted by key.
+fn pairs(options: Options.Options) -> Result[Array[(Str, Str)], Environment.Problem] {
+  Ok(readOver(options) ?.entries())
+}
+
+/// Runs the suite.
+fn main() -> Int {
+  let made = Result.unwrapOr(Fs.temporaryDirectoryIn(Env.temporaryDirectory(), "pudu-env-loader-"), ".")
+  let root = Result.unwrapOr(Fs.canonical(made), made)
+  let _base = Io.write(Path.join(root, ".env"), "# shared\nHOST=file\nPORT=8080\nURL=" + SECRET + "\n")
+  let _local = Io.write(Path.join(root, ".env.local"), "PORT=9090\nLOCAL=$HOST:$PORT\n")
+  let _broken = Io.write(Path.join(root, "broken.env"), "OK=1\nKEY=\"never closed\n")
+  let _latin = Fs.writeAtomically(Path.join(root, "latin.env"), &Result.unwrapOr(Bytes.decodeHex("4e414d453de9"), Bytes.empty()))
+  let base = Options.defaults().inDirectory(root)
+  let layered = base.withFiles(&[".env", ".env.local"])
+  let process = Map.fromPairs(&[("HOST", "shell"), ("ONLY_SHELL", "1")])
+  let lenient = Loader.loadOver(&base.withFiles(&[".env", "absent.env"]), &process)
+  let kept = Loader.loadOver(&layered.withoutOverwrite(), &process)
+  let checks = Test.suite("Loader", &[
+      Test.equals("the default file is read", &pairs(base), &Ok([("HOST", "file"), ("PORT", "8080"), ("URL", SECRET)])),
+      Test.equals("later files win when overwriting", &Result.map(readOver(layered), |values: Map[Str, Str]| values.get("PORT")), &Ok(Some("9090"))),
+      Test.equals("earlier files win without overwriting", &Result.map(readOver(layered.withoutOverwrite()), |values: Map[Str, Str]| values.get("PORT")), &Ok(Some("8080"))),
+      Test.equals("expansion sees earlier files", &Result.map(readOver(layered.withExpansion()), |values: Map[Str, Str]| values.get("LOCAL")), &Ok(Some("file:9090"))),
+      Test.equals("without expansion references stay", &Result.map(readOver(layered), |values: Map[Str, Str]| values.get("LOCAL")), &Ok(Some("$HOST:$PORT"))),
+      Test.equals("a lenient load skips a missing file and records it", &Result.map(lenient, |view: Variables.Variables| (view.sources, view.skipped)), &Ok(([Path.join(root, ".env")], [Environment.MissingFile(Path.join(root, "absent.env"))]))),
+      Test.equals("a strict load refuses a missing file", &pairs(base.withFiles(&["absent.env"]).withStrict()), &Err(Environment.MissingFile(Path.join(root, "absent.env")))),
+      Test.equals("a lenient load of nothing answers nothing", &pairs(base.inDirectory(Path.join(root, "nowhere"))), &Ok([])),
+      Test.equals("an unclosed quote refuses even a lenient load", &pairs(base.withFiles(&["broken.env"])), &Err(Environment.UnclosedQuote(Path.join(root, "broken.env"), 2, "KEY"))),
+      Test.equals("invalid options are refused with every problem", &pairs(base.withFiles(&["a"]).withProbeLevels(-1)), &Err(Environment.InvalidOptions(["files cannot be given while probing", "probe levels must not be negative"]))),
+      Test.equals("an encoding is honoured", &pairs(base.withFiles(&["latin.env"]).withEncoding(Encoding.Latin1)), &Ok([("NAME", "é")])),
+      Test.equals("undecodable bytes are skipped when lenient", &pairs(base.withFiles(&["latin.env"])), &Ok([])),
+      Test.equals("undecodable bytes are refused when strict", &pairs(base.withFiles(&["latin.env"]).withStrict()), &Err(Environment.Undecodable(Path.join(root, "latin.env"), "UTF-8"))),
+      Test.equals("text sources are read in order", &pairs(base.withSources(&[Source.Text("one", "A=1\nB=1"), Source.Text("two", "B=2")])), &Ok([("A", "1"), ("B", "2")])),
+      Test.equals("text sources expand over the process", &pairs(base.withSources(&[Source.Text("one", "D=$HOME/data")]).withExpansion()), &Ok([("D", "/home/me/data")])),
+      Test.equals("a file source is located against the directory", &pairs(base.withSources(&[Source.File(".env.local")])), &Ok([("LOCAL", "$HOST:$PORT"), ("PORT", "9090")])),
+      Test.equals("an unclosed quote in text names its label", &pairs(base.withSources(&[Source.Text("inline", "K='x")])), &Err(Environment.UnclosedQuote("inline", 1, "K"))),
+      Test.equals("the cascade loads its layers", &Result.map(readOver(base.withCascade()), |values: Map[Str, Str]| values.get("PORT")), &Ok(Some("9090"))),
+      Test.equals("loading settles over the process when overwriting", &Result.map(Loader.loadOver(&layered, &process), |view: Variables.Variables| Variables.find(&view, "HOST")), &Ok(Some("file"))),
+      Test.equals("loading keeps the process without overwriting", &Result.map(kept, |view: Variables.Variables| (Variables.find(&view, "HOST"), Variables.find(&view, "PORT"), Variables.find(&view, "ONLY_SHELL"))), &Ok((Some("shell"), Some("8080"), Some("1")))),
+      Test.equals("without overwriting expansion sees the process value that is kept", &Result.map(Loader.readOver(&base.withSources(&[Source.Text("t", "HOST=file\nURL=$HOST")]).withExpansion().withoutOverwrite(), &process), |values: Map[Str, Str]| values.get("URL")), &Ok(Some("shell"))),
+      Test.equals("with overwriting expansion sees the file's value", &Result.map(Loader.readOver(&base.withSources(&[Source.Text("t", "HOST=file\nURL=$HOST")]).withExpansion(), &process), |values: Map[Str, Str]| values.get("URL")), &Ok(Some("file"))),
+      Test.equals("loading records what it applied and read", &Result.map(kept, |view: Variables.Variables| (view.applied, view.sources)), &Ok((["LOCAL", "PORT", "URL"], [Path.join(root, ".env"), Path.join(root, ".env.local")]))),
+      Test.that("a loaded view never renders a value", match Loader.loadOver(&base, &process) {
+          case Ok(view) => !show(view).contains(SECRET) && !Variables.describe(&view).contains(SECRET)
+          case Err(_) => false
+        }),
+      Test.equals("read takes the process environment", &Result.map(Loader.read(&base.withSources(&[Source.Text("t", "P=$PATH")]).withExpansion()), |values: Map[Str, Str]| values.get("P") == Env.variable("PATH")), &Ok(true)),
+      Test.equals("load takes the process environment", &Result.map(Loader.load(&base), |view: Variables.Variables| Variables.has(&view, "PATH")), &Ok(true)),
+      Test.equals("the chain ends in read", &Result.map(base.withFiles(&[".env.local"]).read(), |values: Map[Str, Str]| values.size()), &Ok(2)),
+      Test.equals("the chain ends in load", &Result.map(base.withStrict().load(), |view: Variables.Variables| Variables.find(&view, "PORT")), &Ok(Some("8080")))
+    ])
+  let _cleared = Fs.removeTree(root)
+  let ran = Test.run(&checks)
+  for failure in Test.failuresOf(&ran) {
+    let _reported = Io.writeErrorLine(failure)
+  }
+  Test.report(&ran)
+}

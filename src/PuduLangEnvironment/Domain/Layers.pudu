@@ -1,0 +1,39 @@
+/** @Domain.Layers.Module — which assignment of a key is kept */
+module PuduLangEnvironment.Domain.Layers
+
+/** @Domain.Layers.Entry — one assignment, in file order */
+export type Entry = { key: Str, value: Str }
+
+/** @Domain.Layers.Settled — loaded values settled over the process */
+export type Settled = { values: Map[Str, Str], applied: Array[Str] }
+
+/// The known values with `key` set to `value` when overwriting or when the key is new.
+export fn keep(known: &Map[Str, Str], key: Str, value: Str, overwrite: Bool) -> Map[Str, Str] {
+  if overwrite || !known.containsKey(key) { known.insert(key, value) } else { *known }
+}
+
+/// Every entry of every layer kept in order by the overwrite rule.
+export fn merge(layers: &Array[Array[Entry]], overwrite: Bool) -> Map[Str, Str] {
+  var merged: Map[Str, Str] = mapOf([])
+  for layer in layers {
+    for entry in layer {
+      merged = keep(&merged, entry.key, entry.value, overwrite)
+    }
+  }
+  merged
+}
+
+/// The process values with each loaded value stored over them when overwriting or when the process
+/// value is unset or empty, and the stored keys in sorted order.
+export fn settle(loaded: &Map[Str, Str], process: &Map[Str, Str], overwrite: Bool) -> Settled {
+  var values = *process
+  var applied: Array[Str] = []
+  for pair in loaded.entries() {
+    let held = process.get(pair[0])
+    if overwrite || held == None || held == Some("") {
+      values = values.insert(pair[0], pair[1])
+      applied = applied.push(pair[0])
+    }
+  }
+  Settled{values: values, applied: applied}
+}

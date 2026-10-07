@@ -1,0 +1,30 @@
+/** @Test.Domain.Values.Suite — text to numbers and truth values */
+module PuduLangEnvironment.Domain.ValuesTest
+
+import Std.Decimal as Decimal
+import Std.Io as Io
+import Std.Test as Test
+import PuduLangEnvironment.Domain.Values as Values
+
+/// Runs the suite.
+fn main() -> Int {
+  let checks = Test.suite("Domain.Values", &[
+      Test.equals("a whole number is read", &Values.toInt("8080"), &Some(8080)),
+      Test.equals("a whole number ignores surrounding space", &Values.toInt(" -12 "), &Some(-12)),
+      Test.equals("a whole number refuses a fraction", &Values.toInt("1.5"), &None),
+      Test.equals("a whole number refuses text", &Values.toInt("12a"), &None),
+      Test.equals("a whole number too large is refused", &Values.toInt("99999999999999999999"), &None),
+      Test.equals("a float is read", &Values.toFloat(" 2.5 "), &Some(2.5)),
+      Test.equals("a float refuses text", &Values.toFloat("fast"), &None),
+      Test.equals("a decimal is read exactly", &Values.toDecimal(" 0.10 "), &Decimal.parse("0.10")),
+      Test.equals("a decimal refuses text", &Values.toDecimal("ten"), &None),
+      Test.equals("true is read in any case", &[Values.toBool("true"), Values.toBool(" TRUE "), Values.toBool("True")], &[Some(true), Some(true), Some(true)]),
+      Test.equals("false is read in any case", &[Values.toBool("false"), Values.toBool("FALSE ")], &[Some(false), Some(false)]),
+      Test.equals("other words are not truth values", &[Values.toBool("yes"), Values.toBool("1"), Values.toBool("on"), Values.toBool("")], &[None, None, None, None])
+    ])
+  let ran = Test.run(&checks)
+  for failure in Test.failuresOf(&ran) {
+    let _reported = Io.writeErrorLine(failure)
+  }
+  Test.report(&ran)
+}
