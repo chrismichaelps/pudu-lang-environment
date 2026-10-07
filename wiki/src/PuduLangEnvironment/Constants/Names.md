@@ -28,6 +28,8 @@ export const ENVIRONMENT_NAME_VARIABLES: Array[Str]
 
 export const DEFAULT_PROBE_LEVELS: Int
 
+export const BYTE_ORDER_MARK: Str
+
 export const EXPORT_KEYWORD: Str
 
 export const TRUTH_WORDS: Map[Str, Bool]
@@ -45,12 +47,14 @@ export const KIND_DECIMAL: Str
 export const KIND_BOOL: Str
 
 export const REDACTED: Str
+
+export const SETTING_SEPARATORS: Set[Char]
 ```
 
 ### Linkage
 
 - **Requires:** nothing.
-- **Consumed by:** [[src/PuduLangEnvironment/Binding]], [[src/PuduLangEnvironment/Discovery]], [[src/PuduLangEnvironment/Domain/Cascade]], [[src/PuduLangEnvironment/Domain/Parser]], [[src/PuduLangEnvironment/Domain/Values]], [[src/PuduLangEnvironment/Options]].
+- **Consumed by:** [[src/PuduLangEnvironment/Binding]], [[src/PuduLangEnvironment/Domain/Keys]], [[src/PuduLangEnvironment/Discovery]], [[src/PuduLangEnvironment/Domain/Cascade]], [[src/PuduLangEnvironment/Domain/Parser]], [[src/PuduLangEnvironment/Domain/Values]], [[src/PuduLangEnvironment/Options]].
 
 ## Algorithm
 
@@ -82,4 +86,4 @@ DEPTH 0.2 (SHALLOW). Exercised by the cascade, values, and discovery suites.
 
 ## Referenced by
 
-[[src/PuduLangEnvironment/Binding]] · [[src/PuduLangEnvironment/Constants/_MOC]] · [[src/PuduLangEnvironment/Discovery]] · [[src/PuduLangEnvironment/Domain/Cascade]] · [[src/PuduLangEnvironment/Domain/Parser]] · [[src/PuduLangEnvironment/Domain/Values]] · [[src/PuduLangEnvironment/Options]]
+[[src/PuduLangEnvironment/Binding]] · [[src/PuduLangEnvironment/Constants/_MOC]] · [[src/PuduLangEnvironment/Discovery]] · [[src/PuduLangEnvironment/Domain/Cascade]] · [[src/PuduLangEnvironment/Domain/Keys]] · [[src/PuduLangEnvironment/Domain/Parser]] · [[src/PuduLangEnvironment/Domain/Values]] · [[src/PuduLangEnvironment/Options]]

@@ -23,7 +23,9 @@ hand-off to child processes.
 
 A program's settings record `derives Binding.Bind`, so it reads its own fields from the view
 ([[src/PuduLangEnvironment/Binding]]), and [[src/PuduLangEnvironment/Settings]] runs a
-`pudu-lang-validator` validator over it before the program starts serving.
+`pudu-lang-validator` validator over it before the program starts serving. A program built on
+`Std.App.Config` layers the view over its declared settings instead
+([[src/PuduLangEnvironment/Configuration]]).
 
 ## Layers
 
@@ -32,7 +34,7 @@ A program's settings record `derives Binding.Bind`, so it reads its own fields f
 | `Constants/` | file names, variable names, words, and message templates | nothing |
 | `Utils/` | message templates | std, Constants |
 | `Domain/` | pure parsing, expansion, layering, cascade names, decoding, key names, and value conversion | Utils, Constants, std |
-| public modules | the root vocabulary, options, sources, discovery, the loader, variables, binding, and settings | Domain, Utils, Constants, each other, std |
+| public modules | the root vocabulary, options, sources, discovery, the loader, variables, binding, settings, and configuration | Domain, Utils, Constants, each other, std |
 
 `Domain/` performs no effects and imports no public module. Effects live at the [[seams/World]].
 

@@ -62,9 +62,10 @@ export fn parse(rows: &Array[Str], rules: &Rules, known: Map[Str, Str], process:
   Ok(Parsed{entries: entries, known: seen})
 }
 
-/// The lines of a text split on `\n`, each without the `\r` that ends a CRLF line.
+/// The lines of a text split on `\n`, each without the `\r` that ends a CRLF line, and without a
+/// byte-order mark at the start of the text.
 export fn lines(text: Str) -> Array[Str] {
-  text.split("\n").map(|line: Str| if line.endsWith("\r") { line.take(line.length() - 1) } else { line })
+  Text.stripPrefix(text, Names.BYTE_ORDER_MARK).split("\n").map(|line: Str| if line.endsWith("\r") { line.take(line.length() - 1) } else { line })
 }
 
 /// The key written before `=`, trimmed, without a leading `export` word when export syntax is on.

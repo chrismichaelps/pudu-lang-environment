@@ -10,7 +10,7 @@ tags: [handoff, delivery]
 
 ## Done
 
-- Issue #1 is the ready issue; `feature/1-initial-environment-package` is branched from `dev`,
+- Issue #1 is the ready issue on `chrismichaelps/pudu-lang-environment`; `feature/1-initial-environment-package` is branched from `dev`,
   which is branched from the `main` baseline.
 - Every module under `src/` has its mirrored page with a resolved Grill Log ([[src/_MOC]]).
 - Against the published 0.1.3 compiler: `pudu check`, `pudu fmt --check`, and `pudu lint` are clean
@@ -32,14 +32,16 @@ tags: [handoff, delivery]
 
 ## Open / Remaining
 
-- The GitHub repository `chrismichaelps/pudu-lang-environment` does not exist yet; creating it, the
-  issue, the pull requests, the API documentation wiki, and the `v0.1.0` release wait for the
-  owner's approval.
+- The repository `chrismichaelps/pudu-lang-environment` exists with its wiki enabled; issue #1 is
+  open and pull request #2 carries the package into `dev`.
+- A pre-release audit against the full feature set added the configuration layer
+  ([[src/PuduLangEnvironment/Configuration]]) and ASCII and UTF-32 decoding, and fixed a secret
+  rendered in full by `Redacted` when its field lacked `@secret` ([[src/PuduLangEnvironment/Binding]]).
+- Merging into `dev`, then `main`, the `v0.1.0` release, and the API documentation wiki remain.
 
 ## Exact next action
 
-Create the public repository `chrismichaelps/pudu-lang-environment` with its wiki enabled, then
-push `main`, `dev`, and `feature/1-initial-environment-package`.
+Merge pull request #2 into `dev` once its `checks` and `mutation` jobs pass.
 
 ## Links
 

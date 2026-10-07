@@ -15,6 +15,8 @@ export trait Variable {
   fn fromVariable(key: Str, text: Option[Str]) -> Result[Self, Environment.Problem]
   /// Whether an unset variable is a value rather than a missing one.
   fn optional() -> Bool
+  /// The value rendered for a reader; a secret renders as a placeholder.
+  fn rendered(self: &Self) -> Str
 }
 
 impl Variable for Str {
@@ -22,6 +24,8 @@ impl Variable for Str {
   fn fromVariable(key: Str, text: Option[Str]) -> Result[Self, Environment.Problem] { converted(key, text, |held: Str| Some(held), "") }
   /// A text variable is required.
   fn optional() -> Bool { false }
+  /// The text in quotes.
+  fn rendered(self: &Self) -> Str { show(*self) }
 }
 
 impl Variable for Int {
@@ -29,6 +33,8 @@ impl Variable for Int {
   fn fromVariable(key: Str, text: Option[Str]) -> Result[Self, Environment.Problem] { converted(key, text, Values.toInt, Names.KIND_INT) }
   /// A whole-number variable is required.
   fn optional() -> Bool { false }
+  /// The number as written.
+  fn rendered(self: &Self) -> Str { show(*self) }
 }
 
 impl Variable for Float64 {
@@ -36,6 +42,8 @@ impl Variable for Float64 {
   fn fromVariable(key: Str, text: Option[Str]) -> Result[Self, Environment.Problem] { converted(key, text, Values.toFloat, Names.KIND_FLOAT) }
   /// A float variable is required.
   fn optional() -> Bool { false }
+  /// The number as written.
+  fn rendered(self: &Self) -> Str { show(*self) }
 }
 
 impl Variable for Decimal {
@@ -43,6 +51,8 @@ impl Variable for Decimal {
   fn fromVariable(key: Str, text: Option[Str]) -> Result[Self, Environment.Problem] { converted(key, text, Values.toDecimal, Names.KIND_DECIMAL) }
   /// A decimal variable is required.
   fn optional() -> Bool { false }
+  /// The number as written.
+  fn rendered(self: &Self) -> Str { show(*self) }
 }
 
 impl Variable for Bool {
@@ -50,6 +60,8 @@ impl Variable for Bool {
   fn fromVariable(key: Str, text: Option[Str]) -> Result[Self, Environment.Problem] { converted(key, text, Values.toBool, Names.KIND_BOOL) }
   /// A truth-value variable is required.
   fn optional() -> Bool { false }
+  /// `true` or `false`.
+  fn rendered(self: &Self) -> Str { show(*self) }
 }
 
 impl Variable for Secret.Secret {
@@ -57,6 +69,8 @@ impl Variable for Secret.Secret {
   fn fromVariable(key: Str, text: Option[Str]) -> Result[Self, Environment.Problem] { converted(key, text, |held: Str| Some(Secret.secret(held)), "") }
   /// A secret variable is required.
   fn optional() -> Bool { false }
+  /// The placeholder, never the value.
+  fn rendered(self: &Self) -> Str { Names.REDACTED }
 }
 
 impl [A: Variable] Variable for Option[A] {
@@ -69,6 +83,13 @@ impl [A: Variable] Variable for Option[A] {
   }
   /// An optional variable may be unset.
   fn optional() -> Bool { true }
+  /// `None`, or the held value rendered as `A` renders it.
+  fn rendered(self: &Self) -> Str {
+    match self {
+      case Some(held) => "Some(" + held.rendered() + ")"
+      case None => "None"
+    }
+  }
 }
 
 /** @Environment.Binding.Bind — a record read from environment variables */
@@ -103,12 +124,12 @@ export trait Redacted {
   fn redacted(self: &Self) -> Str
 }
 
-/// A record renders like `show` does, except that a field marked `@secret` renders as
-/// `[REDACTED]`.
+/// A record renders like `show` does, except that every secret, and every field marked
+/// `@secret`, renders as `[REDACTED]`.
 export derive Redacted for T: Record {
   fn redacted(self: &T) -> Str {
-    let parts = Meta.collect[T](fn(field: Meta.Field[T, F]) -> Option[Str] {
-        Some(field.name + ": " + if field.has("secret") { Names.REDACTED } else { show(field.get(self)) })
+    let parts = Meta.collect[T](fn(field: Meta.Field[T, F]) -> Option[Str] where F: Variable {
+        Some(field.name + ": " + if field.has("secret") { Names.REDACTED } else { field.get(self).rendered() })
       })
     Meta.nameOf[T]() + "\{" + parts.join(", ") + "\}"
   }

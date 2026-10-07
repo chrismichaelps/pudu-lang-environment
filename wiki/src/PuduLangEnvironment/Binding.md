@@ -23,6 +23,7 @@ Records read from variables by derivation, and rendered with their secrets hidde
 export trait Variable {
   fn fromVariable(key: Str, text: Option[Str]) -> Result[Self, Environment.Problem]
   fn optional() -> Bool
+  fn rendered(self: &Self) -> Str
 }
 
 impl Variable for Str
@@ -66,8 +67,9 @@ export derive Redacted for T: Record
    all of them are refused at once as `Missing`.
 4. Second pass: each field converts its text through its `Variable` implementation; the first that
    does not convert is refused as `Malformed` with its key and kind.
-5. `Redacted` renders `Name{field: value, ...}` like `show`, with each `@secret` field as
-   `[REDACTED]`.
+5. `Redacted` renders `Name{field: value, ...}`: each field renders itself through
+   `Variable.rendered`, where a `Secret.Secret` — alone or inside an `Option` — always renders as
+   `[REDACTED]`, and a field marked `@secret` renders as `[REDACTED]` whatever its type.
 
 ## Negative Logic (Prohibited Paths)
 
@@ -96,11 +98,17 @@ DEPTH 0.8 (DEEP). Tested by `test/PuduLangEnvironment/BindingTest.pudu` and
   **A:** A missing variable is fixed by adding a line, and a deployment usually misses several at
   once; a malformed one needs reading, and the build pass stops at its first failure.
   _Rejected:_ stopping at the first missing variable (one restart per missing key).
-- **Q:** Why does `Redacted` render the other fields with `show`?
-  **A:** Every type has `show`, so a record needs no extra derive for its plain fields.
-  _Rejected:_ requiring `Show.Show` on every field (excludes `Secret.Secret`, which the program
-  cannot give an implementation).
+- **Q:** Why does a secret render hidden without `@secret`?
+  **A:** `show` over `Std.App.Secret` prints its raw value, so a secret field someone forgot to mark
+  would be printed by the one function meant to be safe. The type decides; the attribute only adds
+  fields of other types. _Rejected:_ rendering unmarked fields with `show` (a forgotten attribute
+  leaks).
+- **Q:** Why does `Redacted` need its fields to be `Variable` types?
+  **A:** Rendering goes through the same trait that reads them, so a settings record derives both
+  with no extra trait. The recursion into `Option` is an instance call, which `Meta.collect`
+  handles ([pudu-lang#457](https://github.com/chrismichaelps/pudu-lang/issues/457) affects only
+  static calls). _Rejected:_ `show` for unmarked fields (leaks secrets, as above).
 
 ## Referenced by
 
-[[CHANGELOG]] · [[architecture/LANGUAGE]] · [[architecture/_MOC]] · [[decisions/ADR-0005-binding-by-derivation]] · [[src/PuduLangEnvironment/Constants/Names]] · [[src/PuduLangEnvironment/Domain/Keys]] · [[src/PuduLangEnvironment/Domain/Values]] · [[src/PuduLangEnvironment/Settings]] · [[src/PuduLangEnvironment/Variables]] · [[src/PuduLangEnvironment/_MOC]]
+[[CHANGELOG]] · [[architecture/LANGUAGE]] · [[architecture/_MOC]] · [[decisions/ADR-0005-binding-by-derivation]] · [[handoffs/2026-10-07-initial-package]] · [[src/PuduLangEnvironment/Constants/Names]] · [[src/PuduLangEnvironment/Domain/Keys]] · [[src/PuduLangEnvironment/Domain/Values]] · [[src/PuduLangEnvironment/Settings]] · [[src/PuduLangEnvironment/Variables]] · [[src/PuduLangEnvironment/_MOC]]

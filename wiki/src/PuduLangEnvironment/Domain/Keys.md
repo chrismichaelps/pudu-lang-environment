@@ -13,7 +13,7 @@ aliases: [PuduLangEnvironment.Domain.Keys]
 
 ## Purpose
 
-Field names to environment variable names.
+Field names and configuration keys to environment variable names.
 
 ## Interface
 
@@ -21,17 +21,21 @@ Field names to environment variable names.
 
 ```pudu
 export fn fromField(name: Str) -> Str
+
+export fn fromSetting(key: Str) -> Str
 ```
 
 ### Linkage
 
-- **Requires:** std only.
-- **Consumed by:** [[src/PuduLangEnvironment/Binding]].
+- **Requires:** [[src/PuduLangEnvironment/Constants/Names]].
+- **Consumed by:** [[src/PuduLangEnvironment/Binding]], [[src/PuduLangEnvironment/Configuration]].
 
 ## Algorithm
 
-1. Each character is upper-cased; an upper-case letter after a lower-case letter or a digit is
-   preceded by `_`.
+1. `fromField`: each character is upper-cased; an upper-case letter after a lower-case letter or a
+   digit is preceded by `_`.
+2. `fromSetting`: each `.` and `-` becomes `_` and every other character is upper-cased, the
+   spelling the standard configuration reads from the environment.
 
 ## Negative Logic (Prohibited Paths)
 
@@ -53,4 +57,4 @@ DEPTH 0.3 (SHALLOW). Tested by `test/PuduLangEnvironment/Domain/KeysTest.pudu`; 
 
 ## Referenced by
 
-[[src/PuduLangEnvironment/Binding]] · [[src/PuduLangEnvironment/Domain/_MOC]]
+[[src/PuduLangEnvironment/Binding]] · [[src/PuduLangEnvironment/Configuration]] · [[src/PuduLangEnvironment/Constants/Names]] · [[src/PuduLangEnvironment/Domain/_MOC]]

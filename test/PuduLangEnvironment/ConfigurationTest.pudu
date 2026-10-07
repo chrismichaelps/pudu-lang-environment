@@ -1,0 +1,33 @@
+/** @Test.Configuration.Suite — variables layered over configuration */
+module PuduLangEnvironment.ConfigurationTest
+
+import Std.App.Config as Config
+import Std.Io as Io
+import Std.Map as Map
+import Std.Test as Test
+import PuduLangEnvironment.Configuration as Configuration
+import PuduLangEnvironment.Variables as Variables
+
+/// A view over the given variables.
+fn over(pairs: Array[(Str, Str)]) -> Variables.Variables {
+  Variables.settled(&Map.empty(), &Map.fromPairs(&pairs), true, [], [])
+}
+
+/// Runs the suite.
+fn main() -> Int {
+  let declared = Config.declaring(&[("server.port", "8080"), ("log-level", "info"), ("name", "app")])
+  let layered = declared.withVariables(&over([("SERVER_PORT", "9090"), ("LOG_LEVEL", ""), ("UNDECLARED", "x")]))
+  let checks = Test.suite("Configuration", &[
+      Test.equals("a declared setting takes its variable", &Config.whole(&layered, "server.port"), &Ok(9090)),
+      Test.equals("the setting records the environment as its source", &Config.sourceOf(&layered, "server.port"), &Some(Config.Environment)),
+      Test.equals("an empty variable leaves the setting", &(Config.textOr(&layered, "log-level", ""), Config.sourceOf(&layered, "log-level")), &("info", Some(Config.Declared))),
+      Test.equals("a setting without a variable is kept", &Config.textOr(&layered, "name", ""), &"app"),
+      Test.equals("an undeclared variable does not become a setting", &Config.sourceOf(&layered, "undeclared"), &None),
+      Test.equals("the profile is kept", &Config.profileOf(&layered), &Config.profileOf(&declared))
+    ])
+  let ran = Test.run(&checks)
+  for failure in Test.failuresOf(&ran) {
+    let _reported = Io.writeErrorLine(failure)
+  }
+  Test.report(&ran)
+}

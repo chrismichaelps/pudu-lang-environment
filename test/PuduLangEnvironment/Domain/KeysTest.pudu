@@ -15,6 +15,9 @@ fn main() -> Int {
       Test.equals("a leading capital is not separated", &Keys.fromField("Port"), &"PORT"),
       Test.equals("an upper snake name is kept", &Keys.fromField("API_KEY"), &"API_KEY"),
       Test.equals("an underscore is kept", &Keys.fromField("max_retries"), &"MAX_RETRIES"),
+      Test.equals("a dotted setting spells its variable with underscores", &Keys.fromSetting("server.port"), &"SERVER_PORT"),
+      Test.equals("a dashed setting spells its variable with underscores", &Keys.fromSetting("log-level.file"), &"LOG_LEVEL_FILE"),
+      Test.equals("a setting's letters are upper-cased as they are", &Keys.fromSetting("dbUrl"), &"DBURL"),
       Test.equals("an empty name stays empty", &Keys.fromField(""), &"")
     ])
   let ran = Test.run(&checks)

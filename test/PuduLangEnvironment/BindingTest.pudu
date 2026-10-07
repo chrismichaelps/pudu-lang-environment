@@ -26,6 +26,9 @@ type Service = {
   replicas: Option[Int]
 } derives Binding.Bind, Binding.Redacted
 
+/** @Test.Binding.Leaky — secrets left unmarked */
+type Leaky = { token: Secret.Secret, backup: Option[Secret.Secret], @secret password: Str, name: Str } derives Binding.Redacted
+
 /// A view over the given variables.
 fn over(pairs: Array[(Str, Str)]) -> Variables.Variables {
   Variables.settled(&Map.empty(), &Map.fromPairs(&pairs), true, [], [])
@@ -62,6 +65,9 @@ fn main() -> Int {
       Test.equals("a malformed float and decimal are refused", &[Result.map(bound(complete().push(("RATIO", "half"))), |held: Service| held.port), Result.map(bound(complete().push(("PRICE", "x"))), |held: Service| held.port)], &[Err(Environment.Malformed("RATIO", "a floating-point number")), Err(Environment.Malformed("PRICE", "a decimal number"))]),
       Test.that("a redacted rendering hides secret fields", !rendered.contains(SECRET) && rendered.contains("apiKey: [REDACTED]")),
       Test.that("a redacted rendering shows other fields", rendered.startsWith("Service\{port: 8080, host: \"db.local\"") && rendered.contains("replicas: None")),
+      Test.equals("a secret renders hidden without the attribute", &Leaky{token: Secret.secret(SECRET), backup: Some(Secret.secret(SECRET)), password: SECRET, name: "svc"}.redacted(), &"Leaky\{token: [REDACTED], backup: Some([REDACTED]), password: [REDACTED], name: \"svc\"\}"),
+      Test.equals("an absent optional secret renders as none", &Leaky{token: Secret.secret(SECRET), backup: None, password: "", name: "svc"}.redacted(), &"Leaky\{token: [REDACTED], backup: None, password: [REDACTED], name: \"svc\"\}"),
+      Test.that("every kind renders as written", rendered.contains("ratio: 0.5") && rendered.contains("price: 1.25") && rendered.contains("debug: false") && rendered.contains("logLevel: \"info\"")),
       Test.that("a problem never quotes a value", !Environment.describe(&Environment.Malformed("PORT", "a whole number")).contains("eighty"))
     ])
   let ran = Test.run(&checks)

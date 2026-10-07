@@ -89,6 +89,8 @@ fn main() -> Int {
       Test.equals("lines split on LF and CRLF", &Parser.lines("a\r\nb\nc\r"), &["a", "b", "c"]),
       Test.equals("a carriage return inside a line is kept", &Parser.lines("a\rb"), &["a\rb"]),
       Test.equals("a trailing line break leaves an empty last line", &Parser.lines("a\n"), &["a", ""]),
+      Test.equals("a leading byte-order mark is dropped", &Parser.lines("\u{FEFF}A=1\nB=2"), &["A=1", "B=2"]),
+      Test.equals("a byte-order mark later in the text is kept", &Parser.lines("A=\u{FEFF}"), &["A=\u{FEFF}"]),
       Test.equals("empty text is one empty line", &Parser.lines(""), &[""])
     ])
   let ran = Test.run(&checks)

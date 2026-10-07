@@ -59,6 +59,8 @@ export fn lines(text: Str) -> Array[Str]
 
 ## Edge Cases
 
+- `lines` drops a byte-order mark at the start of a text, so a `Text` source copied from a file
+  keeps its first key intact.
 - `export` alone, or as the start of a longer key (`exporter=1`), is a key, not the prefix.
 - A `#` with no space before it (`a#b`) is part of the value.
 - Text after a closing quote is ignored.

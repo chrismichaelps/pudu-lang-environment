@@ -10,7 +10,7 @@ tags: [moc]
 - [[src/PuduLangEnvironment/Domain/Layers]] — Entries, which assignment is kept, the merge of layers, and the settled view.
 - [[src/PuduLangEnvironment/Domain/Cascade]] — The environment name and the layered file names it selects.
 - [[src/PuduLangEnvironment/Domain/Encoding]] — Bytes to text in a declared encoding, honouring a byte-order mark.
-- [[src/PuduLangEnvironment/Domain/Keys]] — Field names to environment variable names.
+- [[src/PuduLangEnvironment/Domain/Keys]] — Field names and configuration keys to environment variable names.
 - [[src/PuduLangEnvironment/Domain/Values]] — Text to whole numbers, floats, decimals, and truth values.
 
 ## Referenced by

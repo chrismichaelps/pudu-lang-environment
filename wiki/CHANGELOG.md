@@ -27,10 +27,15 @@ tags: [changelog]
 - [[src/PuduLangEnvironment/Variables]]: typed reads, secrets, required keys, child-process
   hand-off, and a description without values; loading never writes the process environment
   ([[decisions/ADR-0002-a-view-not-a-mutation]]).
+- Settings layered over `Std.App.Config` with `withVariables`
+  ([[src/PuduLangEnvironment/Configuration]]); ASCII and UTF-32 decoding beside UTF-8, Latin-1, and
+  UTF-16.
 - Settings records bound by `derives Binding.Bind` with `@env`, `@default`, and `@secret`, rendered
   safely by `derives Binding.Redacted`, and checked by a validator
   ([[src/PuduLangEnvironment/Binding]], [[src/PuduLangEnvironment/Settings]],
   [[decisions/ADR-0005-binding-by-derivation]]).
+- A pre-release audit made every `Secret` render hidden through `Redacted` even without `@secret`
+  or inside an `Option`, and dropped a byte-order mark at the start of a text source.
 - No problem, description, or rendering carries a value read from a file
   ([[decisions/ADR-0001-problems-never-carry-values]]).
 - A compiler fault found while writing the binding derive was reported as

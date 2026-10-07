@@ -13,6 +13,9 @@ export const ENVIRONMENT_NAME_VARIABLES: Array[Str] = ["PUDU_ENV", "PROFILE"]
 /// How many parent directories probing climbs unless told otherwise.
 export const DEFAULT_PROBE_LEVELS: Int = 4
 
+/// The character a byte-order mark decodes to, dropped from the start of a text.
+export const BYTE_ORDER_MARK: Str = "\u{FEFF}"
+
 /// The word that may precede a key when export syntax is on.
 export const EXPORT_KEYWORD: Str = "export"
 
@@ -39,3 +42,6 @@ export const KIND_BOOL: Str = "true or false"
 
 /// What a redacted rendering shows in place of a secret field.
 export const REDACTED: Str = "[REDACTED]"
+
+/// The characters of a configuration key that its variable spells as `_`.
+export const SETTING_SEPARATORS: Set[Char] = setOf(['.', '-'])

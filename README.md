@@ -56,6 +56,7 @@ module name from the program that installs it.
 | Variables | `Variables` | The loaded values settled over the process environment: `find`, `has`, `text`, `int`, `float`, `decimal`, `bool`, their `find…` forms, `secret`, `require`, `apply`, `describe`. |
 | Binding | `Binding` | `derives Binding.Bind` reads a record's fields from variables; `derives Binding.Redacted` renders it with `@secret` fields hidden. |
 | Settings | `Settings` | A bound record checked by a `pudu-lang-validator` validator. |
+| Configuration | `Configuration` | `config.withVariables(&variables)` layers the view over a `Std.App.Config`, `server.port` reading `SERVER_PORT`. |
 
 ## Options
 
@@ -64,7 +65,7 @@ module name from the program that installs it.
 | `strict` | `false`: a missing or unreadable source is skipped and recorded in `skipped` | `withStrict`, `withoutStrict` |
 | `files` | `[".env"]`, read in order, relative to `directory` | `withFiles` |
 | `sources` | none; text or bytes read instead of files | `withSources` |
-| `encoding` | `Utf8`; also `Latin1`, `Utf16Le`, `Utf16Be`; a byte-order mark always wins | `withEncoding` |
+| `encoding` | `Utf8`; also `Ascii`, `Latin1`, `Utf16Le`, `Utf16Be`, `Utf32Le`, `Utf32Be`; a byte-order mark always wins | `withEncoding` |
 | `trimValues` | `false` | `withTrimValues`, `withoutTrimValues` |
 | `overwrite` | `true`: later layers win, and loaded values replace process variables | `withOverwrite`, `withoutOverwrite` |
 | `probe` | `None`; `Some(n)` looks for `.env` in `directory` and up to `n` parents | `withProbe` (4 levels), `withProbeLevels`, `withoutProbe` |
@@ -122,6 +123,22 @@ fn rules() -> Validator.Validator[Server] {
 // server.redacted() renders Server{port: 8443, database: [REDACTED], ...}.
 ```
 
+A `Secret.Secret` field renders as `[REDACTED]` whether or not it is marked, and inside an `Option`
+too; `@secret` hides fields of any other type.
+
+## Application configuration
+
+A program built on `Std.App.Config` layers the loaded variables over the settings it declares, in
+place of `withEnvironment()`:
+
+```pudu
+import Std.App.Config as Config
+import PuduLangEnvironment.Configuration as Configuration
+
+let config = Config.declaring(&[("server.port", "8080")]).withVariables(&variables)
+// Config.whole(&config, "server.port") reads SERVER_PORT; Config.sourceOf says Environment.
+```
+
 ## Keeping secrets secret
 
 - Loading never writes the process environment; the `Variables` it answers are the only place the
@@ -136,8 +153,8 @@ fn rules() -> Validator.Validator[Server] {
 
 ## Examples
 
-`examples/` holds runnable programs: `QuickStart`, `Layered`, `TypedSettings`, `ChildProcess`, and
-`InMemory`.
+`examples/` holds runnable programs: `QuickStart`, `Layered`, `TypedSettings`, `Configured`,
+`ChildProcess`, and `InMemory`.
 
 ```bash
 pudu run examples/QuickStart.pudu

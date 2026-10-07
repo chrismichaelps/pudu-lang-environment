@@ -25,6 +25,7 @@ corrected in the same change.
 | Text | `Std.Text` | `wholeOf`, `trimStart`, `trimEnd`, `fromChars` |
 | Exact numbers | `Std.Decimal` | `parse` |
 | Secrets | `Std.App.Secret` | `secret`, `reveal`, `redact` |
+| Application configuration | `Std.App.Config` | `Config`, `Setting`, `declaring`, `sourceOf`, `Layering` |
 | Reflection in derives | `Std.Meta` | `build`, `collect`, `nameOf`, `Field.get`, `Field.has`, `Field.attributeOr` |
 | Child processes | `Std.Process` | `Launch`, `Launching.withVariable` |
 | Collections | `Std.List`, `Std.Map` | `List.sortBy`, `Map.fromPairs`, `Map.get`, `Map.insert`, `Map.keys` |
@@ -119,6 +120,8 @@ a [[domain/Variables|Variables]] view instead of writing into the process; see
   `Option[A]` implementation calls `A.fromVariable`) fails at run time with E7001 on 0.1.3
   ([pudu-lang#457](https://github.com/chrismichaelps/pudu-lang/issues/457)); `Meta.build` is
   unaffected. Gather in `Meta.collect` with a method that does not recurse.
+- **`show` over `Std.App.Secret.Secret`** prints its raw value; render secrets through
+  `Binding.Redacted` or `Secret.redact`.
 - **`Env.variable` inside a loop** scans the whole environment each call; read `Env.variables()`
   once into a map.
 - **A `Problem` or description built from a value** discloses a secret; build it from keys, line
@@ -132,4 +135,4 @@ a [[domain/Variables|Variables]] view instead of writing into the process; see
 
 ## Referenced by
 
-[[00-INDEX]] · [[CHANGELOG]] · [[architecture/_MOC]] · [[handoffs/2026-10-07-initial-package]] · [[src/PuduLangEnvironment]] · [[src/PuduLangEnvironment/Binding]] · [[src/PuduLangEnvironment/Constants/Messages]] · [[src/PuduLangEnvironment/Constants/Names]] · [[src/PuduLangEnvironment/Discovery]] · [[src/PuduLangEnvironment/Domain/Cascade]] · [[src/PuduLangEnvironment/Domain/Encoding]] · [[src/PuduLangEnvironment/Domain/Expander]] · [[src/PuduLangEnvironment/Domain/Keys]] · [[src/PuduLangEnvironment/Domain/Layers]] · [[src/PuduLangEnvironment/Domain/Parser]] · [[src/PuduLangEnvironment/Domain/Values]] · [[src/PuduLangEnvironment/Loader]] · [[src/PuduLangEnvironment/Options]] · [[src/PuduLangEnvironment/Settings]] · [[src/PuduLangEnvironment/Source]] · [[src/PuduLangEnvironment/Utils/Template]] · [[src/PuduLangEnvironment/Variables]] · [[tools/Mutate]]
+[[00-INDEX]] · [[CHANGELOG]] · [[architecture/_MOC]] · [[handoffs/2026-10-07-initial-package]] · [[src/PuduLangEnvironment]] · [[src/PuduLangEnvironment/Binding]] · [[src/PuduLangEnvironment/Configuration]] · [[src/PuduLangEnvironment/Constants/Messages]] · [[src/PuduLangEnvironment/Constants/Names]] · [[src/PuduLangEnvironment/Discovery]] · [[src/PuduLangEnvironment/Domain/Cascade]] · [[src/PuduLangEnvironment/Domain/Encoding]] · [[src/PuduLangEnvironment/Domain/Expander]] · [[src/PuduLangEnvironment/Domain/Keys]] · [[src/PuduLangEnvironment/Domain/Layers]] · [[src/PuduLangEnvironment/Domain/Parser]] · [[src/PuduLangEnvironment/Domain/Values]] · [[src/PuduLangEnvironment/Loader]] · [[src/PuduLangEnvironment/Options]] · [[src/PuduLangEnvironment/Settings]] · [[src/PuduLangEnvironment/Source]] · [[src/PuduLangEnvironment/Utils/Template]] · [[src/PuduLangEnvironment/Variables]] · [[tools/Mutate]]
